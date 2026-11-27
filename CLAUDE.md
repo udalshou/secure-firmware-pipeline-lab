@@ -4,8 +4,9 @@ Before committing, check whether this file, `README.md`, `docs/` and inline
 comments still describe current behavior — update them if not.
 
 Git branching: only branch off `main` when explicitly asked. Default —
-commit straight to whatever branch is checked out (usually `main`). Once
-task 05 lands, `main` is protected: work goes through PRs.
+`main` is protected by a ruleset (`.github/rulesets/main.json`): work goes
+through a branch and a squash-merged PR with green checks; commits are
+SSH-signed (repo-local `commit.gpgsign`).
 
 Commit messages and PR descriptions: describe only what was implemented — no
 AI attribution / `Co-Authored-By` trailers.
@@ -42,12 +43,12 @@ code stays tiny; the pipeline and its evidence are the point. Plan: tasks
 
 Repo: https://github.com/udalshou/secure-firmware-pipeline-lab (public).
 
-Status (2026-11-27): tasks 01-04 done (API, UI, rootless rootfs build;
-GitHub Actions CI running the Makefile targets, green on `main`; SAST with
-Bandit + Semgrep SARIF in code scanning, high findings block; CycloneDX
-SBOM of the rootfs + UI, Trivy SCA on repo and SBOM, Dependabot). The rootfs
-is deterministic per machine but not yet across machines (task 12). Next:
-task 05 (repo protection).
+Status (2026-11-27): tasks 01-05 done (API, UI, rootless rootfs build;
+GitHub Actions CI running the Makefile targets; SAST with Bandit + Semgrep
+SARIF in code scanning, high findings block; CycloneDX SBOM of the rootfs +
+UI, Trivy SCA on repo and SBOM, Dependabot; `main` ruleset, signed commits,
+CODEOWNERS, OpenSSF Scorecard). The rootfs is deterministic per machine but
+not yet across machines (task 12). Next: task 06 (release signing).
 
 ## Conventions
 
@@ -84,7 +85,7 @@ secure-firmware-pipeline-lab/
 ├── os/         ← Dockerfiles + bash scripts: rootfs.tar, rootfs.ext4 (.mender: task 07)
 ├── tools/      ← pipeline helpers (sarif_gate.py: fail on error-level SARIF)
 ├── .github/    ← CI, SAST, SBOM, release + signing workflows (task 02+)
-├── docs/       ← security-findings.md (scanners, severity policy); SSDF/CRA docs later
+├── docs/       ← security-findings.md (scanners, severity policy), repo-protection.md; SSDF/CRA docs later
 ├── out/        ← gitignored build output
 └── tasks/      ← gitignored personal task tracker (README.md, todo/, done/)
 ```

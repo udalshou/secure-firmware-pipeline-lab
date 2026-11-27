@@ -1,0 +1,9 @@
+# Code owners are requested as reviewers on every pull request that touches
+# their paths. The build system and CI decide what ships and how it is
+# checked, so they belong to the security reviewer. With one developer, the
+# ruleset does not require a code owner approval (the author cannot approve
+# their own PR); see docs/repo-protection.md.
+/os/        @udalshou
+/.github/   @udalshou
+/tools/     @udalshou
+/Makefile   @udalshou

@@ -1,5 +1,7 @@
 # secure-firmware-pipeline-lab
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/udalshou/secure-firmware-pipeline-lab/badge)](https://scorecard.dev/viewer/?uri=github.com/udalshou/secure-firmware-pipeline-lab)
+
 A small, reproducible secure software development pipeline for an embedded
 Linux appliance: a Python API, a Vue web UI, a Debian-based root filesystem
 image and (later) a signed over-the-air update artifact. The controls are
@@ -15,7 +17,7 @@ api/    FastAPI service (/health, /status), managed with uv (uv.lock)
 ui/     Vue 3 + TypeScript web UI (Vite), npm with package-lock.json
 os/     OS image build: Dockerfiles + bash scripts -> rootfs.tar, rootfs.ext4
 tools/  pipeline helpers (SARIF gate)
-docs/   security documentation, e.g. docs/security-findings.md
+docs/   security documentation: security-findings.md, repo-protection.md
 out/    build output (gitignored)
 ```
 
@@ -53,6 +55,16 @@ severity policy (high blocks the merge) are in
 pushes and weekly: it uploads the Trivy SARIF reports to code scanning and
 keeps the SBOM as a workflow artifact. Dependabot (`.github/dependabot.yml`)
 proposes weekly updates for Python, npm, GitHub Actions and base images.
+
+## Repository protection
+
+`main` accepts changes only through squash-merged pull requests with green
+CI, no high code scanning alerts and signed commits; force pushes and
+deletion are blocked. The ruleset is kept as code in
+`.github/rulesets/main.json`, `CODEOWNERS` assigns the build system and CI to
+the security reviewer, and `.github/workflows/scorecard.yml` publishes an
+OpenSSF Scorecard result. Details:
+[docs/repo-protection.md](docs/repo-protection.md).
 
 ## How the OS image is built
 
