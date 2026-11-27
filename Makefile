@@ -63,6 +63,9 @@ SIGNED_FILES := rootfs.ext4 SHA256SUMS
 # while running for the tag being verified.
 SIGNER_IDENTITY = https://github.com/$(GITHUB_REPO)/$(RELEASE_WORKFLOW)@refs/tags/$(TAG)
 OIDC_ISSUER := https://token.actions.githubusercontent.com
+# Attestations the release workflow records for rootfs.ext4 (actions/attest):
+# SLSA build provenance and the CycloneDX SBOM.
+ATTESTATION_TYPES := https://slsa.dev/provenance/v1 https://cyclonedx.org/bom
 
 ## API: lint, format check, type check, tests (locked dependencies only)
 api-test:
@@ -141,24 +144,33 @@ release-sign:
 		$(call COSIGN,$(RELEASE_DIR)) sign-blob --yes --bundle "$$f.sigstore.json" "$$f"; \
 	done
 
-## Download release TAG and verify it as a consumer would: checksums, cosign
-## signatures from this repository's release workflow at TAG, and GitHub's
-## build provenance and SBOM attestations. Needs gh, logged in
+## Download release TAG and verify it as a consumer would, with no GitHub
+## login: checksums, the cosign signatures, and GitHub's build provenance and
+## SBOM attestations for rootfs.ext4; every signature must come from this
+## repository's release workflow running for TAG. Needs Docker, curl, python3
 verify-release:
 	test -n "$(TAG)" || { echo "usage: make verify-release TAG=v0.1.0" >&2; exit 2; }
 	rm -rf $(VERIFY_DIR)
 	mkdir -p $(VERIFY_DIR)
-	gh release download "$(TAG)" --repo $(GITHUB_REPO) --dir $(VERIFY_DIR)
+	for f in $(RELEASE_FILES) SHA256SUMS $(SIGNED_FILES:=.sigstore.json); do \
+		curl --fail --silent --show-error --location --output "$(VERIFY_DIR)/$$f" \
+			"https://github.com/$(GITHUB_REPO)/releases/download/$(TAG)/$$f"; \
+	done
 	cd $(VERIFY_DIR) && sha256sum --check --strict SHA256SUMS
 	for f in $(SIGNED_FILES); do \
 		$(call COSIGN,$(VERIFY_DIR)) verify-blob --bundle "$$f.sigstore.json" \
 			--certificate-identity "$(SIGNER_IDENTITY)" \
 			--certificate-oidc-issuer $(OIDC_ISSUER) "$$f"; \
 	done
-	gh attestation verify $(VERIFY_DIR)/rootfs.ext4 --repo $(GITHUB_REPO) \
-		--cert-identity "$(SIGNER_IDENTITY)"
-	gh attestation verify $(VERIFY_DIR)/rootfs.ext4 --repo $(GITHUB_REPO) \
-		--cert-identity "$(SIGNER_IDENTITY)" --predicate-type https://cyclonedx.org/bom
+	digest="$$(sha256sum $(VERIFY_DIR)/rootfs.ext4 | cut -d' ' -f1)"; \
+	for type in $(ATTESTATION_TYPES); do \
+		python3 tools/attestation_bundle.py $(GITHUB_REPO) "$$digest" "$$type" \
+			$(VERIFY_DIR)/attestation.json; \
+		$(call COSIGN,$(VERIFY_DIR)) verify-blob-attestation --bundle attestation.json \
+			--type "$$type" --digest "$$digest" --digestAlg sha256 \
+			--certificate-identity "$(SIGNER_IDENTITY)" \
+			--certificate-oidc-issuer $(OIDC_ISSUER); \
+	done
 
 clean:
 	rm -rf out ui/dist

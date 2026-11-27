@@ -59,7 +59,7 @@ point to a commit on protected `main`.
 
 ## Verify a release
 
-Requirements: Docker and the GitHub CLI, logged in (`gh auth login`).
+Requirements: Docker, curl and python3. No GitHub account or login.
 
 ```
 make verify-release TAG=v0.1.0
@@ -71,10 +71,22 @@ passes:
 1. `sha256sum --check` against `SHA256SUMS`.
 2. `cosign verify-blob` for `rootfs.ext4` and `SHA256SUMS`, accepting only a
    certificate issued to this repository's release workflow at that tag.
-3. `gh attestation verify` for the build provenance and the CycloneDX SBOM
-   attestation of `rootfs.ext4`, with the same signer identity.
+3. `cosign verify-blob-attestation` for the SLSA build provenance and the
+   CycloneDX SBOM attestation of `rootfs.ext4`, with the same signer
+   identity. [`tools/attestation_bundle.py`](../tools/attestation_bundle.py)
+   fetches each bundle from GitHub's public attestations API; cosign checks
+   it against the image's digest (the image is over cosign's 128 MiB blob
+   limit, so the digest is passed instead of the file).
 
-The same checks by hand, with cosign installed:
+Every release file also carries GitHub's own release attestation (immutable
+releases, signed by GitHub's private Sigstore instance). `gh attestation
+verify` 2.55 stops at that one with `no matching CertificateIdentity` and
+never reaches the workflow attestations; selecting by predicate type avoids
+this.
+
+The signature and attestation checks by hand, with cosign and the GitHub CLI
+(the `gh attestation` lines need a gh release newer than 2.55 that skips the
+release attestation; not tested here):
 
 ```
 cosign verify-blob rootfs.ext4 --bundle rootfs.ext4.sigstore.json \
