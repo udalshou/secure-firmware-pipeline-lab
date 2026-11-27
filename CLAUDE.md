@@ -43,14 +43,17 @@ code stays tiny; the pipeline and its evidence are the point. Plan: tasks
 
 Repo: https://github.com/udalshou/secure-firmware-pipeline-lab (public).
 
-Status (2026-11-27): tasks 01-06 done (API, UI, rootless rootfs build;
+Status (2026-11-28): tasks 01-06 done (API, UI, rootless rootfs build;
 GitHub Actions CI running the Makefile targets; SAST with Bandit + Semgrep
 SARIF in code scanning, high findings block; CycloneDX SBOM of the rootfs +
 UI, Trivy SCA on repo and SBOM, Dependabot; `main` ruleset, signed commits,
 CODEOWNERS, OpenSSF Scorecard; tag `v*` -> keyless cosign signatures, build
 provenance + SBOM attestations, immutable GitHub Release, `make
-verify-release`). The rootfs is deterministic per machine but not yet across
-machines (task 12). Next: task 07 (Mender artifact).
+verify-release`). Task 07 in progress: Mender artifact `lab-firmware.mender`,
+signed with an ECDSA P-256 device key in a `mender-sign` job, negative tests
+in `make mender-selftest`; still needs the `release` environment and a
+tagged release. The rootfs is deterministic per machine but not yet across
+machines (task 12).
 
 ## Conventions
 
@@ -79,6 +82,12 @@ machines (task 12). Next: task 07 (Mender artifact).
   `publish` job of `release.yml`, which builds nothing; `make release-sign`
   refuses to run without the Actions OIDC token. Details:
   `docs/release-signing.md`.
+- Mender signing: device public key at
+  `os/rootfs-overlay/etc/mender/artifact-verify-key.pem` (ships in the image);
+  private key in `~/.lab-keys/mender-artifact.key` and the
+  `MENDER_SIGNING_KEY` secret of the `release` environment, used only by the
+  `mender-sign` job. mender-artifact 3.9 needs traditional PEM keys, has no
+  Ed25519 and fails open with one. Details: `docs/mender-signing.md`.
 - Never disable TLS checks for package managers; the Makefile unexports
   `NODE_TLS_REJECT_UNAUTHORIZED`.
 
@@ -88,11 +97,13 @@ machines (task 12). Next: task 07 (Mender artifact).
 secure-firmware-pipeline-lab/
 ├── api/        ← FastAPI app (uv, pyproject.toml + uv.lock)
 ├── ui/         ← Vue 3 + TypeScript (Vite, npm + package-lock.json)
-├── os/         ← Dockerfiles + bash scripts: rootfs.tar, rootfs.ext4 (.mender: task 07)
+├── os/         ← Dockerfiles + bash scripts: rootfs.tar, rootfs.ext4, lab-firmware.mender
+│                 (mender-selftest.sh: signature negative tests)
 ├── tools/      ← pipeline helpers (sarif_gate.py: fail on error-level SARIF;
 │                 attestation_bundle.py: fetch attestation for verify-release)
 ├── .github/    ← CI, SAST, SBOM, release + signing workflows (task 02+)
-├── docs/       ← security-findings.md (scanners, severity policy), repo-protection.md, release-signing.md; SSDF/CRA docs later
+├── docs/       ← security-findings.md (scanners, severity policy), repo-protection.md, release-signing.md,
+│                 mender-signing.md; SSDF/CRA docs later
 ├── out/        ← gitignored build output
 └── tasks/      ← gitignored personal task tracker (README.md, todo/, done/)
 ```

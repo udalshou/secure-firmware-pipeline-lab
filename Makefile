@@ -6,9 +6,14 @@ SHELL := /bin/bash
 # Never let a developer shell switch off TLS certificate checks for npm.
 unexport NODE_TLS_REJECT_UNAUTHORIZED
 
-.PHONY: all api-test ui-build os-lint sast rootfs sbom sca release release-sign verify-release clean
+.PHONY: all api-test ui-build os-lint sast tools-image rootfs mender mender-selftest sbom sca \
+	release mender-sign release-sign verify-release clean
 
-all: api-test os-lint sast rootfs sbom sca
+all: api-test os-lint sast rootfs mender-selftest sbom sca
+
+# Version of everything built from this checkout: the tag on a release build,
+# otherwise the short commit hash (with -dirty for uncommitted changes).
+VERSION = $(shell git describe --tags --always --dirty)
 
 # Linters for the OS build run as images pinned by digest, identical in CI and
 # locally; nothing is installed on the host. Bump tag and digest together.
@@ -57,7 +62,7 @@ RELEASE_DIR := out/release
 VERIFY_DIR := out/verify
 # Files published in a release, and the subset with a cosign signature:
 # SHA256SUMS covers every file, rootfs.ext4 can also be checked on its own.
-RELEASE_FILES := rootfs.ext4 sbom.cdx.json
+RELEASE_FILES := rootfs.ext4 sbom.cdx.json $(MENDER_ARTIFACT)
 SIGNED_FILES := rootfs.ext4 SHA256SUMS
 # A signature is valid only if this repository's release workflow made it
 # while running for the tag being verified.
@@ -66,6 +71,22 @@ OIDC_ISSUER := https://token.actions.githubusercontent.com
 # Attestations the release workflow records for rootfs.ext4 (actions/attest):
 # SLSA build provenance and the CycloneDX SBOM.
 ATTESTATION_TYPES := https://slsa.dev/provenance/v1 https://cyclonedx.org/bom
+
+# OS tools image (os/Dockerfile.tools): packs the rootfs and builds, signs and
+# tests the Mender artifact. Built locally from the same pins as the rootfs.
+TOOLS_IMAGE := lab-os-tools:build
+# Mender OTA update artifact: rootfs.ext4 as a full-image update. Devices
+# accept it only if it is signed by the key whose public half is baked into
+# the image under /etc/mender (see docs/mender-signing.md).
+MENDER_ARTIFACT := lab-firmware.mender
+MENDER_DEVICE_TYPE := lab-device
+MENDER_VERIFY_KEY := os/rootfs-overlay/etc/mender/artifact-verify-key.pem
+# $(call MENDER_RUN,<dir>[,<docker options>]) runs the tools image as the host
+# user, without network, with <dir> as its working directory and the device
+# public key at /verify-key.pem.
+MENDER_RUN = docker run --rm --network none $(AS_HOST_USER) \
+	--volume "$(CURDIR)/$(MENDER_VERIFY_KEY):/verify-key.pem:ro" \
+	--volume "$(CURDIR)/$(1):/work" --workdir /work $(2) $(TOOLS_IMAGE)
 
 ## API: lint, format check, type check, tests (locked dependencies only)
 api-test:
@@ -97,9 +118,26 @@ sast:
 		$(addprefix --config ,$(SEMGREP_CONFIGS)) --sarif > $(SAST_DIR)/semgrep.sarif
 	python3 tools/sarif_gate.py $(SAST_DIR)/bandit.sarif $(SAST_DIR)/semgrep.sarif
 
+## OS tools image, see TOOLS_IMAGE
+tools-image:
+	docker build --quiet --file os/Dockerfile.tools --tag $(TOOLS_IMAGE) os
+
 ## OS image: out/rootfs.tar and out/rootfs.ext4
-rootfs: ui-build
-	os/build-rootfs.sh
+rootfs: ui-build tools-image
+	TOOLS_IMAGE=$(TOOLS_IMAGE) os/build-rootfs.sh
+
+## Mender artifact out/lab-firmware.mender from rootfs.ext4, unsigned: only
+## the release workflow signs it (mender-sign)
+mender: rootfs
+	$(call MENDER_RUN,out) mender-artifact write rootfs-image --no-progress \
+		--file rootfs.ext4 --device-type $(MENDER_DEVICE_TYPE) \
+		--artifact-name lab-firmware-$(VERSION) --output-path $(MENDER_ARTIFACT)
+
+## Mender verification self-test with throwaway keys: a correct signature is
+## accepted; wrong key, no signature and a flipped byte are rejected; the
+## device key does not fail open (os/mender-selftest.sh)
+mender-selftest: mender
+	$(call MENDER_RUN,out) mender-selftest $(MENDER_ARTIFACT) /verify-key.pem
 
 ## SBOM of what ships, out/sbom/sbom.cdx.json (CycloneDX): Debian and Python
 ## packages found in rootfs.tar, plus the npm packages bundled into the UI
@@ -112,7 +150,7 @@ sbom: rootfs
 	rm -rf $(SBOM_DIR)/rootfs-tree
 	$(TRIVY) fs --format cyclonedx ui/package-lock.json > $(SBOM_DIR)/sbom-ui.cdx.json
 	$(CYCLONEDX) merge --input-files sbom-rootfs.cdx.json sbom-ui.cdx.json \
-		--name lab-appliance --version "$$(git describe --tags --always --dirty)" \
+		--name lab-appliance --version "$(VERSION)" \
 		--output-file sbom.cdx.json
 	$(CYCLONEDX) validate --input-file sbom.cdx.json --fail-on-errors
 
@@ -126,29 +164,41 @@ sca: sbom
 	$(TRIVY) sbom $(TRIVY_POLICY) --format sarif $(SBOM_DIR)/sbom.cdx.json > $(SCA_DIR)/trivy-sbom.sarif
 	python3 tools/sarif_gate.py $(SCA_DIR)/trivy-repo.sarif $(SCA_DIR)/trivy-sbom.sarif
 
-## Release files in out/release: rootfs.ext4, its SBOM and SHA256SUMS over
-## both; built only when the SCA gate passes
-release: sca
+## Release files in out/release: rootfs.ext4, its SBOM and the unsigned
+## Mender artifact; built only when the SCA gate passes
+release: sca mender
 	rm -rf $(RELEASE_DIR)
 	mkdir -p $(RELEASE_DIR)
-	cp out/rootfs.ext4 $(SBOM_DIR)/sbom.cdx.json $(RELEASE_DIR)/
-	cd $(RELEASE_DIR) && sha256sum $(RELEASE_FILES) > SHA256SUMS
+	cp out/rootfs.ext4 $(SBOM_DIR)/sbom.cdx.json out/$(MENDER_ARTIFACT) $(RELEASE_DIR)/
 
-## Keyless cosign signatures (Sigstore bundles <file>.sigstore.json) for the
-## files in out/release. Release workflow only: needs its OIDC token, and does
-## not rebuild, so it signs exactly the files the build job produced
+## Sign the Mender artifact in out/release with the private key file
+## MENDER_KEY, then check it against the device public key. In CI the key
+## comes from the `release` environment and exists only in the mender-sign job
+mender-sign: tools-image
+	test -f "$(MENDER_KEY)" || \
+		{ echo "usage: make mender-sign MENDER_KEY=<private key file>" >&2; exit 2; }
+	$(call MENDER_RUN,$(RELEASE_DIR),--volume "$(abspath $(MENDER_KEY)):/signing.key:ro") \
+		mender-artifact sign --key /signing.key $(MENDER_ARTIFACT)
+	$(call MENDER_RUN,$(RELEASE_DIR)) mender-artifact validate --key /verify-key.pem $(MENDER_ARTIFACT)
+
+## SHA256SUMS over the final release files, then keyless cosign signatures
+## (Sigstore bundles <file>.sigstore.json). Release workflow only: needs its
+## OIDC token, and does not rebuild, so it signs exactly the files the build
+## and mender-sign jobs produced
 release-sign:
 	test -n "$${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || \
 		{ echo "release-sign needs the GitHub Actions OIDC token (release.yml)" >&2; exit 1; }
+	cd $(RELEASE_DIR) && sha256sum $(RELEASE_FILES) > SHA256SUMS
 	for f in $(SIGNED_FILES); do \
 		$(call COSIGN,$(RELEASE_DIR)) sign-blob --yes --bundle "$$f.sigstore.json" "$$f"; \
 	done
 
 ## Download release TAG and verify it as a consumer would, with no GitHub
-## login: checksums, the cosign signatures, and GitHub's build provenance and
-## SBOM attestations for rootfs.ext4; every signature must come from this
-## repository's release workflow running for TAG. Needs Docker, curl, python3
-verify-release:
+## login: checksums, the cosign signatures, GitHub's build provenance and
+## SBOM attestations for rootfs.ext4 (each of these must come from this
+## repository's release workflow running for TAG), and the Mender artifact
+## signature against the device public key. Needs Docker, curl, python3
+verify-release: tools-image
 	test -n "$(TAG)" || { echo "usage: make verify-release TAG=v0.1.0" >&2; exit 2; }
 	rm -rf $(VERIFY_DIR)
 	mkdir -p $(VERIFY_DIR)
@@ -171,6 +221,7 @@ verify-release:
 			--certificate-identity "$(SIGNER_IDENTITY)" \
 			--certificate-oidc-issuer $(OIDC_ISSUER); \
 	done
+	$(call MENDER_RUN,$(VERIFY_DIR)) mender-artifact validate --key /verify-key.pem $(MENDER_ARTIFACT)
 
 clean:
 	rm -rf out ui/dist

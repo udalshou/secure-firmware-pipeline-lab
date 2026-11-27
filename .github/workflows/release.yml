@@ -1,10 +1,14 @@
-# Signed release on a version tag. The `build` job runs `make release` with a
-# read-only token: the image, its SBOM and SHA256SUMS, built only when the
-# SCA gate passes. The `publish` job never builds or installs anything: it
-# signs exactly those files with keyless cosign (`make release-sign`), records
-# GitHub build provenance and SBOM attestations, and publishes the release.
-# Keeping the write and OIDC permissions out of the build job means no build
-# dependency can mint a signing identity. Verify with `make verify-release`.
+# Signed release on a version tag, in three jobs that each hold one power:
+#   build        read-only token: `make release` builds the image, its SBOM and
+#                the unsigned Mender artifact, only when the SCA gate passes.
+#   mender-sign  the Mender signing key (secret of the `release` environment,
+#                behind a required reviewer): signs the Mender artifact.
+#   publish      write and OIDC permissions, builds nothing: SHA256SUMS and
+#                keyless cosign signatures (`make release-sign`), GitHub build
+#                provenance and SBOM attestations, the GitHub Release.
+# No build dependency can reach the Mender key or mint a signing identity, and
+# the key never shares a job with the release-writing token.
+# Verify with `make verify-release`.
 name: release
 
 on:
@@ -45,8 +49,43 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  mender-sign:
     needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Deployment to `release` waits for a reviewer and is allowed only for v*
+    # tags; only then does GitHub hand out the environment's secrets.
+    environment: release
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: out/release/
+      # Build the tools image (network access) before the key touches disk.
+      - run: make tools-image
+      - name: Sign the Mender artifact
+        env:
+          MENDER_SIGNING_KEY: ${{ secrets.MENDER_SIGNING_KEY }}
+        run: |
+          key="$RUNNER_TEMP/mender-signing.key"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s\n' "$MENDER_SIGNING_KEY" > "$key")
+          make mender-sign MENDER_KEY="$key"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-signed
+          path: out/release/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: mender-sign
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -63,7 +102,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: release
+          name: release-signed
           path: out/release/
       - run: make release-sign
       # SLSA build provenance for every file listed in SHA256SUMS.
@@ -81,4 +120,4 @@ jobs:
         run: >-
           gh release create "$GITHUB_REF_NAME" out/release/*
           --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME"
-          --notes "Signed with Sigstore keyless signing; build provenance and SBOM attestations on GitHub. Verify: make verify-release TAG=$GITHUB_REF_NAME (see README)."
+          --notes "Signed with Sigstore keyless signing; build provenance and SBOM attestations on GitHub. lab-firmware.mender carries a Mender signature for the device key in /etc/mender. Verify: make verify-release TAG=$GITHUB_REF_NAME (see README)."

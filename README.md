@@ -4,7 +4,7 @@
 
 A small, reproducible secure software development pipeline for an embedded
 Linux appliance: a Python API, a Vue web UI, a Debian-based root filesystem
-image and (later) a signed over-the-air update artifact. The controls are
+image and a signed over-the-air (Mender) update artifact. The controls are
 mapped to NIST SP 800-218 (SSDF) and the EU Cyber Resilience Act.
 
 The application code is deliberately tiny. The pipeline, its controls and the
@@ -15,10 +15,11 @@ evidence they produce are the point.
 ```
 api/    FastAPI service (/health, /status), managed with uv (uv.lock)
 ui/     Vue 3 + TypeScript web UI (Vite), npm with package-lock.json
-os/     OS image build: Dockerfiles + bash scripts -> rootfs.tar, rootfs.ext4
+os/     OS image build: Dockerfiles + bash scripts -> rootfs.tar, rootfs.ext4,
+        lab-firmware.mender (Mender OTA artifact)
 tools/  pipeline helpers (SARIF gate, attestation fetch for release checks)
 docs/   security documentation: security-findings.md, repo-protection.md,
-        release-signing.md
+        release-signing.md, mender-signing.md
 out/    build output (gitignored)
 ```
 
@@ -32,20 +33,24 @@ Requirements: GNU Make, Docker, [uv](https://docs.astral.sh/uv/), Node.js
 with npm, git. Root on the host is not needed.
 
 ```
-make all        # api-test + os-lint + sast + ui-build + rootfs + sbom + sca
+make all        # api-test + os-lint + sast + ui-build + rootfs + mender-selftest + sbom + sca
 make api-test   # ruff, pyright (strict), pytest
 make ui-build   # npm ci, ESLint, vue-tsc, vite build
 make os-lint    # ShellCheck + hadolint (pinned images) on os/
 make sast       # Bandit + Semgrep -> out/sast/*.sarif, fails on high findings
 make rootfs     # out/rootfs.tar and out/rootfs.ext4
+make mender     # rootfs + unsigned Mender artifact out/lab-firmware.mender
+make mender-selftest  # mender + signature checks with throwaway keys (must reject bad artifacts)
 make sbom       # rootfs + CycloneDX SBOM of what ships -> out/sbom/sbom.cdx.json
 make sca        # sbom + Trivy on repo and SBOM -> out/sca/*.sarif, fails on fixable high
-make release    # sca + release files -> out/release/ (rootfs.ext4, SBOM, SHA256SUMS)
+make release    # sca + mender + release files -> out/release/ (rootfs.ext4, SBOM, .mender)
+make mender-sign MENDER_KEY=<private key>  # sign out/release/lab-firmware.mender
 make verify-release TAG=v0.1.0   # download a GitHub Release and verify it
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same Makefile targets: `api`, `ui`
-and `os` jobs in parallel, then `image`, which builds the rootfs and uploads
+and `os` jobs in parallel, then `image`, which builds the rootfs and the
+Mender artifact, runs the Mender signature self-test and uploads
 `rootfs.ext4` as a workflow artifact. Actions are pinned by commit SHA and the
 workflow token is read-only.
 
@@ -72,9 +77,11 @@ OpenSSF Scorecard result. Details:
 ## Signed releases
 
 Pushing a tag `v*` runs `.github/workflows/release.yml`: it builds
-`rootfs.ext4` and its SBOM, signs them with Sigstore keyless signing
-(cosign, GitHub OIDC), adds GitHub build provenance and SBOM attestations
-and publishes an immutable GitHub Release. Only a commit on `main` can be
+`rootfs.ext4`, its SBOM and the Mender update artifact, signs the Mender
+artifact with the device key (a GitHub environment secret behind a required
+reviewer), signs the release files with Sigstore keyless signing (cosign,
+GitHub OIDC), adds GitHub build provenance and SBOM attestations and
+publishes an immutable GitHub Release. Only a commit on `main` can be
 released. Verify any release with Docker, curl and python3, no login:
 
 ```
@@ -82,8 +89,9 @@ make verify-release TAG=v0.1.0
 ```
 
 What it checks, the equivalent manual commands, and keyless versus keyed
-signing:
-[docs/release-signing.md](docs/release-signing.md).
+signing: [docs/release-signing.md](docs/release-signing.md). The Mender
+artifact, its keys, the device configuration and key rotation:
+[docs/mender-signing.md](docs/mender-signing.md).
 
 ## How the OS image is built
 
@@ -95,6 +103,10 @@ signing:
    (`os/Dockerfile.tools`), so file owners and setuid bits are kept without
    root on the host. It writes a deterministic `rootfs.tar` and populates
    `rootfs.ext4` with `mkfs.ext4 -d`.
+4. `make mender` wraps `rootfs.ext4` into a Mender full-image update with
+   `mender-artifact` from the same tools container. The image ships the
+   public key that devices verify updates against
+   (`os/rootfs-overlay/etc/mender/`).
 
 Pinning: base images by digest, Debian packages through a dated
 [snapshot.debian.org](https://snapshot.debian.org) archive, Python packages

@@ -14,7 +14,8 @@ The GitHub Release for that tag holds:
 |------|------------|
 | `rootfs.ext4` | The root filesystem image |
 | `sbom.cdx.json` | CycloneDX SBOM of what ships in it (`make sbom`) |
-| `SHA256SUMS` | SHA-256 of `rootfs.ext4` and `sbom.cdx.json` |
+| `lab-firmware.mender` | Mender OTA update with `rootfs.ext4` as payload, signed with the device key ([mender-signing.md](mender-signing.md)) |
+| `SHA256SUMS` | SHA-256 of `rootfs.ext4`, `sbom.cdx.json` and `lab-firmware.mender` |
 | `rootfs.ext4.sigstore.json` | cosign signature bundle for `rootfs.ext4` |
 | `SHA256SUMS.sigstore.json` | cosign signature bundle for `SHA256SUMS`, so it covers every file |
 
@@ -26,16 +27,22 @@ signed statement about `rootfs.ext4`.
 
 1. `build` job, read-only token: checks that the tagged commit is on `main`
    (so it went through a reviewed pull request with green checks), then runs
-   `make release`. That builds the image and SBOM, runs the SCA gate (a
-   fixable high or critical vulnerability stops the release) and writes
-   `out/release/`.
-2. `publish` job: downloads those files and never builds or installs
-   anything. `make release-sign` signs them with cosign, `actions/attest`
-   records the attestations, and `gh release create` publishes the release.
+   `make release`. That builds the image, SBOM and unsigned Mender
+   artifact, runs the SCA gate (a fixable high or critical vulnerability
+   stops the release) and writes `out/release/`.
+2. `mender-sign` job, in the `release` environment (required reviewer, `v*`
+   tags only): signs the Mender artifact with the device signing key, the
+   environment's only secret, and checks it against the public key that
+   ships in the image. Details in [mender-signing.md](mender-signing.md).
+3. `publish` job: downloads those files and never builds or installs
+   anything. `make release-sign` writes `SHA256SUMS` and signs with cosign,
+   `actions/attest` records the attestations, and `gh release create`
+   publishes the release.
 
-Only `publish` has `contents: write` and `id-token: write`. Build steps run
-npm, Docker builds and package managers; none of them can mint a signing
-identity or change the repository.
+Only `publish` has `contents: write` and `id-token: write`, and only
+`mender-sign` sees the Mender key. Build steps run npm, Docker builds and
+package managers; none of them can mint a signing identity, reach the key or
+change the repository.
 
 ## Keyless signing
 
@@ -77,6 +84,8 @@ passes:
    fetches each bundle from GitHub's public attestations API; cosign checks
    it against the image's digest (the image is over cosign's 128 MiB blob
    limit, so the digest is passed instead of the file).
+4. `mender-artifact validate` for `lab-firmware.mender` against the device
+   public key in the checkout, as a device would check it.
 
 Every release file also carries GitHub's own release attestation (immutable
 releases, signed by GitHub's private Sigstore instance). `gh attestation
@@ -120,5 +129,5 @@ case a keyed signature fits:
   project's job, and there is no transparency log unless the signer uploads
   to Rekor as well.
 
-The over-the-air update artifact is that device-side case and is planned to
-use a keyed signature.
+The over-the-air update artifact is that device-side case and uses a keyed
+signature: [mender-signing.md](mender-signing.md).
