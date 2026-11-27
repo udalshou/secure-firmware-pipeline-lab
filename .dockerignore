@@ -1,0 +1,9 @@
+# Only what os/Dockerfile.rootfs copies goes into the build context.
+*
+!api/pyproject.toml
+!api/uv.lock
+!api/.python-version
+!api/src/
+!ui/dist/
+!os/rootfs-overlay/
+**/__pycache__
