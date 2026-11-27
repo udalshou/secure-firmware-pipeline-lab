@@ -17,7 +17,8 @@ api/    FastAPI service (/health, /status), managed with uv (uv.lock)
 ui/     Vue 3 + TypeScript web UI (Vite), npm with package-lock.json
 os/     OS image build: Dockerfiles + bash scripts -> rootfs.tar, rootfs.ext4
 tools/  pipeline helpers (SARIF gate)
-docs/   security documentation: security-findings.md, repo-protection.md
+docs/   security documentation: security-findings.md, repo-protection.md,
+        release-signing.md
 out/    build output (gitignored)
 ```
 
@@ -39,6 +40,8 @@ make sast       # Bandit + Semgrep -> out/sast/*.sarif, fails on high findings
 make rootfs     # out/rootfs.tar and out/rootfs.ext4
 make sbom       # rootfs + CycloneDX SBOM of what ships -> out/sbom/sbom.cdx.json
 make sca        # sbom + Trivy on repo and SBOM -> out/sca/*.sarif, fails on fixable high
+make release    # sca + release files -> out/release/ (rootfs.ext4, SBOM, SHA256SUMS)
+make verify-release TAG=v0.1.0   # download a GitHub Release and verify it
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same Makefile targets: `api`, `ui`
@@ -65,6 +68,22 @@ deletion are blocked. The ruleset is kept as code in
 the security reviewer, and `.github/workflows/scorecard.yml` publishes an
 OpenSSF Scorecard result. Details:
 [docs/repo-protection.md](docs/repo-protection.md).
+
+## Signed releases
+
+Pushing a tag `v*` runs `.github/workflows/release.yml`: it builds
+`rootfs.ext4` and its SBOM, signs them with Sigstore keyless signing
+(cosign, GitHub OIDC), adds GitHub build provenance and SBOM attestations
+and publishes an immutable GitHub Release. Only a commit on `main` can be
+released. Verify any release with Docker and a logged-in `gh`:
+
+```
+make verify-release TAG=v0.1.0
+```
+
+What it checks, the equivalent manual `cosign` and `gh attestation`
+commands, and keyless versus keyed signing:
+[docs/release-signing.md](docs/release-signing.md).
 
 ## How the OS image is built
 

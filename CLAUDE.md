@@ -43,12 +43,14 @@ code stays tiny; the pipeline and its evidence are the point. Plan: tasks
 
 Repo: https://github.com/udalshou/secure-firmware-pipeline-lab (public).
 
-Status (2026-11-27): tasks 01-05 done (API, UI, rootless rootfs build;
+Status (2026-11-27): tasks 01-06 done (API, UI, rootless rootfs build;
 GitHub Actions CI running the Makefile targets; SAST with Bandit + Semgrep
 SARIF in code scanning, high findings block; CycloneDX SBOM of the rootfs +
 UI, Trivy SCA on repo and SBOM, Dependabot; `main` ruleset, signed commits,
-CODEOWNERS, OpenSSF Scorecard). The rootfs is deterministic per machine but
-not yet across machines (task 12). Next: task 06 (release signing).
+CODEOWNERS, OpenSSF Scorecard; tag `v*` -> keyless cosign signatures, build
+provenance + SBOM attestations, immutable GitHub Release, `make
+verify-release`). The rootfs is deterministic per machine but not yet across
+machines (task 12). Next: task 07 (Mender artifact).
 
 ## Conventions
 
@@ -73,6 +75,10 @@ not yet across machines (task 12). Next: task 06 (release signing).
 - Scanners write SARIF to `out/<kind>/`, upload it to code scanning even on
   failure, and gate merges with `tools/sarif_gate.py` (SARIF `error` blocks).
   Policy: `docs/security-findings.md`.
+- Release signing is keyless (cosign + GitHub OIDC) and only in the
+  `publish` job of `release.yml`, which builds nothing; `make release-sign`
+  refuses to run without the Actions OIDC token. Details:
+  `docs/release-signing.md`.
 - Never disable TLS checks for package managers; the Makefile unexports
   `NODE_TLS_REJECT_UNAUTHORIZED`.
 
@@ -85,7 +91,7 @@ secure-firmware-pipeline-lab/
 ├── os/         ← Dockerfiles + bash scripts: rootfs.tar, rootfs.ext4 (.mender: task 07)
 ├── tools/      ← pipeline helpers (sarif_gate.py: fail on error-level SARIF)
 ├── .github/    ← CI, SAST, SBOM, release + signing workflows (task 02+)
-├── docs/       ← security-findings.md (scanners, severity policy), repo-protection.md; SSDF/CRA docs later
+├── docs/       ← security-findings.md (scanners, severity policy), repo-protection.md, release-signing.md; SSDF/CRA docs later
 ├── out/        ← gitignored build output
 └── tasks/      ← gitignored personal task tracker (README.md, todo/, done/)
 ```

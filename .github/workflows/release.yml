@@ -1,0 +1,84 @@
+# Signed release on a version tag. The `build` job runs `make release` with a
+# read-only token: the image, its SBOM and SHA256SUMS, built only when the
+# SCA gate passes. The `publish` job never builds or installs anything: it
+# signs exactly those files with keyless cosign (`make release-sign`), records
+# GitHub build provenance and SBOM attestations, and publishes the release.
+# Keeping the write and OIDC permissions out of the build job means no build
+# dependency can mint a signing identity. Verify with `make verify-release`.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # full history: main ancestry check, `git describe` for the SBOM version
+      # Only reviewed code is released: the tagged commit must be on main,
+      # which accepts changes only through pull requests with green checks.
+      - name: Tagged commit is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.14.0"
+      - run: make release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: out/release/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write # create the GitHub Release
+      id-token: write # OIDC token for Sigstore signing certificates
+      attestations: write # store provenance and SBOM attestations
+      artifact-metadata: write # artifact storage record for the attestations
+    steps:
+      - uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: out/release/
+      - run: make release-sign
+      # SLSA build provenance for every file listed in SHA256SUMS.
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: out/release/SHA256SUMS
+      # The CycloneDX SBOM as a signed statement about rootfs.ext4.
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: out/release/rootfs.ext4
+          sbom-path: out/release/sbom.cdx.json
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" out/release/*
+          --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME"
+          --notes "Signed with Sigstore keyless signing; build provenance and SBOM attestations on GitHub. Verify: make verify-release TAG=$GITHUB_REF_NAME (see README)."
