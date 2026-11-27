@@ -109,10 +109,10 @@ jobs:
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-checksums: out/release/SHA256SUMS
-      # The CycloneDX SBOM as a signed statement about rootfs.ext4.
+      # The CycloneDX SBOM as a signed statement about the image.
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: out/release/rootfs.ext4
+          subject-path: out/release/rootfs.ext4.xz
           sbom-path: out/release/sbom.cdx.json
       - name: Publish GitHub Release
         env:

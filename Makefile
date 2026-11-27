@@ -60,20 +60,10 @@ GITHUB_REPO := udalshou/secure-firmware-pipeline-lab
 RELEASE_WORKFLOW := .github/workflows/release.yml
 RELEASE_DIR := out/release
 VERIFY_DIR := out/verify
-# Files published in a release, and the subset with a cosign signature:
-# SHA256SUMS covers every file, rootfs.ext4 can also be checked on its own.
-RELEASE_FILES := rootfs.ext4 sbom.cdx.json $(MENDER_ARTIFACT)
-SIGNED_FILES := rootfs.ext4 SHA256SUMS
-# A signature is valid only if this repository's release workflow made it
-# while running for the tag being verified.
-SIGNER_IDENTITY = https://github.com/$(GITHUB_REPO)/$(RELEASE_WORKFLOW)@refs/tags/$(TAG)
-OIDC_ISSUER := https://token.actions.githubusercontent.com
-# Attestations the release workflow records for rootfs.ext4 (actions/attest):
-# SLSA build provenance and the CycloneDX SBOM.
-ATTESTATION_TYPES := https://slsa.dev/provenance/v1 https://cyclonedx.org/bom
 
-# OS tools image (os/Dockerfile.tools): packs the rootfs and builds, signs and
-# tests the Mender artifact. Built locally from the same pins as the rootfs.
+# OS tools image (os/Dockerfile.tools): packs and compresses the rootfs and
+# builds, signs and tests the Mender artifact. Built locally from the same
+# pins as the rootfs.
 TOOLS_IMAGE := lab-os-tools:build
 # Mender OTA update artifact: rootfs.ext4 as a full-image update. Devices
 # accept it only if it is signed by the key whose public half is baked into
@@ -81,12 +71,29 @@ TOOLS_IMAGE := lab-os-tools:build
 MENDER_ARTIFACT := lab-firmware.mender
 MENDER_DEVICE_TYPE := lab-device
 MENDER_VERIFY_KEY := os/rootfs-overlay/etc/mender/artifact-verify-key.pem
-# $(call MENDER_RUN,<dir>[,<docker options>]) runs the tools image as the host
+# $(call TOOLS_RUN,<dir>[,<docker options>]) runs the tools image as the host
 # user, without network, with <dir> as its working directory and the device
 # public key at /verify-key.pem.
-MENDER_RUN = docker run --rm --network none $(AS_HOST_USER) \
+TOOLS_RUN = docker run --rm --network none $(AS_HOST_USER) \
 	--volume "$(CURDIR)/$(MENDER_VERIFY_KEY):/verify-key.pem:ro" \
 	--volume "$(CURDIR)/$(1):/work" --workdir /work $(2) $(TOOLS_IMAGE)
+
+# The disk image ships xz-compressed: rootfs.ext4 is a 256 MiB file system,
+# mostly empty blocks. Single-threaded xz, so the output does not depend on
+# the CPU count.
+ROOTFS_XZ := rootfs.ext4.xz
+# Files published in a release, and the subset with a cosign signature:
+# SHA256SUMS covers every file, the image can also be checked on its own.
+# release-sign refuses to run if out/release holds anything else.
+RELEASE_FILES := $(ROOTFS_XZ) sbom.cdx.json $(MENDER_ARTIFACT)
+SIGNED_FILES := $(ROOTFS_XZ) SHA256SUMS
+# A signature is valid only if this repository's release workflow made it
+# while running for the tag being verified.
+SIGNER_IDENTITY = https://github.com/$(GITHUB_REPO)/$(RELEASE_WORKFLOW)@refs/tags/$(TAG)
+OIDC_ISSUER := https://token.actions.githubusercontent.com
+# Attestations the release workflow records for the image (actions/attest):
+# SLSA build provenance and the CycloneDX SBOM.
+ATTESTATION_TYPES := https://slsa.dev/provenance/v1 https://cyclonedx.org/bom
 
 ## API: lint, format check, type check, tests (locked dependencies only)
 api-test:
@@ -129,15 +136,15 @@ rootfs: ui-build tools-image
 ## Mender artifact out/lab-firmware.mender from rootfs.ext4, unsigned: only
 ## the release workflow signs it (mender-sign)
 mender: rootfs
-	$(call MENDER_RUN,out) mender-artifact write rootfs-image --no-progress \
-		--file rootfs.ext4 --device-type $(MENDER_DEVICE_TYPE) \
+	$(call TOOLS_RUN,out) mender-artifact write rootfs-image --no-progress \
+		--compression lzma --file rootfs.ext4 --device-type $(MENDER_DEVICE_TYPE) \
 		--artifact-name lab-firmware-$(VERSION) --output-path $(MENDER_ARTIFACT)
 
 ## Mender verification self-test with throwaway keys: a correct signature is
 ## accepted; wrong key, no signature and a flipped byte are rejected; the
 ## device key does not fail open (os/mender-selftest.sh)
 mender-selftest: mender
-	$(call MENDER_RUN,out) mender-selftest $(MENDER_ARTIFACT) /verify-key.pem
+	$(call TOOLS_RUN,out) mender-selftest $(MENDER_ARTIFACT) /verify-key.pem
 
 ## SBOM of what ships, out/sbom/sbom.cdx.json (CycloneDX): Debian and Python
 ## packages found in rootfs.tar, plus the npm packages bundled into the UI
@@ -164,12 +171,13 @@ sca: sbom
 	$(TRIVY) sbom $(TRIVY_POLICY) --format sarif $(SBOM_DIR)/sbom.cdx.json > $(SCA_DIR)/trivy-sbom.sarif
 	python3 tools/sarif_gate.py $(SCA_DIR)/trivy-repo.sarif $(SCA_DIR)/trivy-sbom.sarif
 
-## Release files in out/release: rootfs.ext4, its SBOM and the unsigned
-## Mender artifact; built only when the SCA gate passes
+## Release files in out/release: the xz-compressed rootfs.ext4, its SBOM and
+## the unsigned Mender artifact; built only when the SCA gate passes
 release: sca mender
 	rm -rf $(RELEASE_DIR)
 	mkdir -p $(RELEASE_DIR)
-	cp out/rootfs.ext4 $(SBOM_DIR)/sbom.cdx.json out/$(MENDER_ARTIFACT) $(RELEASE_DIR)/
+	$(call TOOLS_RUN,out) xz -9 --threads=1 --stdout rootfs.ext4 > $(RELEASE_DIR)/$(ROOTFS_XZ)
+	cp $(SBOM_DIR)/sbom.cdx.json out/$(MENDER_ARTIFACT) $(RELEASE_DIR)/
 
 ## Sign the Mender artifact in out/release with the private key file
 ## MENDER_KEY, then check it against the device public key. In CI the key
@@ -177,9 +185,9 @@ release: sca mender
 mender-sign: tools-image
 	test -f "$(MENDER_KEY)" || \
 		{ echo "usage: make mender-sign MENDER_KEY=<private key file>" >&2; exit 2; }
-	$(call MENDER_RUN,$(RELEASE_DIR),--volume "$(abspath $(MENDER_KEY)):/signing.key:ro") \
+	$(call TOOLS_RUN,$(RELEASE_DIR),--volume "$(abspath $(MENDER_KEY)):/signing.key:ro") \
 		mender-artifact sign --key /signing.key $(MENDER_ARTIFACT)
-	$(call MENDER_RUN,$(RELEASE_DIR)) mender-artifact validate --key /verify-key.pem $(MENDER_ARTIFACT)
+	$(call TOOLS_RUN,$(RELEASE_DIR)) mender-artifact validate --key /verify-key.pem $(MENDER_ARTIFACT)
 
 ## SHA256SUMS over the final release files, then keyless cosign signatures
 ## (Sigstore bundles <file>.sigstore.json). Release workflow only: needs its
@@ -188,6 +196,8 @@ mender-sign: tools-image
 release-sign:
 	test -n "$${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || \
 		{ echo "release-sign needs the GitHub Actions OIDC token (release.yml)" >&2; exit 1; }
+	cd $(RELEASE_DIR) && test "$$(ls | sort)" = "$$(printf '%s\n' $(RELEASE_FILES) | sort)" || \
+		{ echo "$(RELEASE_DIR) must hold exactly: $(RELEASE_FILES); it has: $$(ls | xargs)" >&2; exit 1; }
 	cd $(RELEASE_DIR) && sha256sum $(RELEASE_FILES) > SHA256SUMS
 	for f in $(SIGNED_FILES); do \
 		$(call COSIGN,$(RELEASE_DIR)) sign-blob --yes --bundle "$$f.sigstore.json" "$$f"; \
@@ -195,11 +205,12 @@ release-sign:
 
 ## Download release TAG and verify it as a consumer would, with no GitHub
 ## login: checksums, the cosign signatures, GitHub's build provenance and
-## SBOM attestations for rootfs.ext4 (each of these must come from this
-## repository's release workflow running for TAG), and the Mender artifact
-## signature against the device public key. Needs Docker, curl, python3
+## SBOM attestations for the image (each of these must come from this
+## repository's release workflow running for TAG), the Mender artifact
+## signature against the device public key, and that the Mender payload is
+## the same image. Needs Docker, curl, python3
 verify-release: tools-image
-	test -n "$(TAG)" || { echo "usage: make verify-release TAG=v0.1.0" >&2; exit 2; }
+	test -n "$(TAG)" || { echo "usage: make verify-release TAG=v0.2.1" >&2; exit 2; }
 	rm -rf $(VERIFY_DIR)
 	mkdir -p $(VERIFY_DIR)
 	for f in $(RELEASE_FILES) SHA256SUMS $(SIGNED_FILES:=.sigstore.json); do \
@@ -212,7 +223,7 @@ verify-release: tools-image
 			--certificate-identity "$(SIGNER_IDENTITY)" \
 			--certificate-oidc-issuer $(OIDC_ISSUER) "$$f"; \
 	done
-	digest="$$(sha256sum $(VERIFY_DIR)/rootfs.ext4 | cut -d' ' -f1)"; \
+	digest="$$(sha256sum $(VERIFY_DIR)/$(ROOTFS_XZ) | cut -d' ' -f1)"; \
 	for type in $(ATTESTATION_TYPES); do \
 		python3 tools/attestation_bundle.py $(GITHUB_REPO) "$$digest" "$$type" \
 			$(VERIFY_DIR)/attestation.json; \
@@ -221,7 +232,13 @@ verify-release: tools-image
 			--certificate-identity "$(SIGNER_IDENTITY)" \
 			--certificate-oidc-issuer $(OIDC_ISSUER); \
 	done
-	$(call MENDER_RUN,$(VERIFY_DIR)) mender-artifact validate --key /verify-key.pem $(MENDER_ARTIFACT)
+	$(call TOOLS_RUN,$(VERIFY_DIR)) mender-artifact validate --key /verify-key.pem $(MENDER_ARTIFACT)
+	$(call TOOLS_RUN,$(VERIFY_DIR)) bash -c 'set -euo pipefail; \
+		image=$$(xz --decompress --stdout $(ROOTFS_XZ) | sha256sum | cut -d" " -f1); \
+		payload=$$(mender-artifact read --no-progress $(MENDER_ARTIFACT) | \
+			sed -n "s/^[[:space:]]*rootfs-image.checksum: //p"); \
+		echo "rootfs.ext4 $$image, Mender payload $$payload"; \
+		test "$$image" = "$$payload"'
 
 clean:
 	rm -rf out ui/dist

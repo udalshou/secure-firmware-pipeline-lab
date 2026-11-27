@@ -43,9 +43,9 @@ make mender     # rootfs + unsigned Mender artifact out/lab-firmware.mender
 make mender-selftest  # mender + signature checks with throwaway keys (must reject bad artifacts)
 make sbom       # rootfs + CycloneDX SBOM of what ships -> out/sbom/sbom.cdx.json
 make sca        # sbom + Trivy on repo and SBOM -> out/sca/*.sarif, fails on fixable high
-make release    # sca + mender + release files -> out/release/ (rootfs.ext4, SBOM, .mender)
+make release    # sca + mender + release files -> out/release/ (rootfs.ext4.xz, SBOM, .mender)
 make mender-sign MENDER_KEY=<private key>  # sign out/release/lab-firmware.mender
-make verify-release TAG=v0.1.0   # download a GitHub Release and verify it
+make verify-release TAG=v0.2.1   # download a GitHub Release and verify it
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same Makefile targets: `api`, `ui`
@@ -77,7 +77,7 @@ OpenSSF Scorecard result. Details:
 ## Signed releases
 
 Pushing a tag `v*` runs `.github/workflows/release.yml`: it builds
-`rootfs.ext4`, its SBOM and the Mender update artifact, signs the Mender
+the image (`rootfs.ext4.xz`), its SBOM and the Mender update artifact, signs the Mender
 artifact with the device key (a GitHub environment secret behind a required
 reviewer), signs the release files with Sigstore keyless signing (cosign,
 GitHub OIDC), adds GitHub build provenance and SBOM attestations and
@@ -85,7 +85,7 @@ publishes an immutable GitHub Release. Only a commit on `main` can be
 released. Verify any release with Docker, curl and python3, no login:
 
 ```
-make verify-release TAG=v0.1.0
+make verify-release TAG=v0.2.1
 ```
 
 What it checks, the equivalent manual commands, and keyless versus keyed

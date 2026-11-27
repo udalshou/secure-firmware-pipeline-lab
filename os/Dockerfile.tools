@@ -13,7 +13,7 @@ RUN printf 'Types: deb\nURIs: http://snapshot.debian.org/archive/debian/%s\nSuit
 # Package versions are fixed by DEBIAN_SNAPSHOT, not per package.
 # hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends e2fsprogs mender-artifact openssl \
+    && apt-get install -y --no-install-recommends e2fsprogs mender-artifact openssl xz-utils \
     && rm -rf /var/lib/apt/lists/*
 COPY pack-rootfs.sh /usr/local/bin/pack-rootfs
 COPY mender-selftest.sh /usr/local/bin/mender-selftest
