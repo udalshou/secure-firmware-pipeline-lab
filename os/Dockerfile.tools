@@ -1,6 +1,8 @@
-# Pinned toolbox for turning the exported rootfs into release images.
-# Runs as root inside a container, so file ownership in the image stays
-# correct without root on the build host. Same pins as Dockerfile.rootfs.
+# Pinned toolbox for the OS image and its update artifact: turns the exported
+# rootfs into release images (pack-rootfs, runs as root so file ownership in
+# the image stays correct without root on the build host) and builds, signs
+# and tests the Mender artifact (mender-artifact, mender-selftest). Same pins
+# as Dockerfile.rootfs.
 
 FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0
 ARG DEBIAN_SNAPSHOT=20261127T000000Z
@@ -11,6 +13,7 @@ RUN printf 'Types: deb\nURIs: http://snapshot.debian.org/archive/debian/%s\nSuit
 # Package versions are fixed by DEBIAN_SNAPSHOT, not per package.
 # hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends e2fsprogs \
+    && apt-get install -y --no-install-recommends e2fsprogs mender-artifact openssl \
     && rm -rf /var/lib/apt/lists/*
 COPY pack-rootfs.sh /usr/local/bin/pack-rootfs
+COPY mender-selftest.sh /usr/local/bin/mender-selftest
