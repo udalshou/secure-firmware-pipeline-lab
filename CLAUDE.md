@@ -42,8 +42,10 @@ code stays tiny; the pipeline and its evidence are the point. Plan: tasks
 
 Repo: https://github.com/udalshou/secure-firmware-pipeline-lab (public).
 
-Status (2026-11-27): task 01 done (API, UI, rootless rootfs build,
-`make all` green on a clean clone). Next: task 02 (CI baseline).
+Status (2026-11-27): tasks 01-02 done (API, UI, rootless rootfs build;
+GitHub Actions CI running the Makefile targets, green on `main`). The rootfs
+is deterministic per machine but not yet across machines (task 12). Next:
+task 03 (SAST).
 
 ## Conventions
 
@@ -53,6 +55,8 @@ Status (2026-11-27): task 01 done (API, UI, rootless rootfs build,
 - Security tools not on the host (ShellCheck, hadolint, Trivy, Semgrep,
   cosign, mender-artifact) run as Docker images pinned by digest, the same
   in CI and locally. No system installs.
+- GitHub Actions are pinned by commit SHA with the tag in a trailing
+  comment; workflow token `contents: read` unless a job needs more.
 - Root-needing image steps (ownership, `mkfs.ext4`) run inside the tools
   container (`os/Dockerfile.tools`), never with host root.
 - Images from ghcr.io fail to pull on the dev machine (token 403); prefer
