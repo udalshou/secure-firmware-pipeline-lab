@@ -14,7 +14,8 @@ evidence they produce are the point.
 api/    FastAPI service (/health, /status), managed with uv (uv.lock)
 ui/     Vue 3 + TypeScript web UI (Vite), npm with package-lock.json
 os/     OS image build: Dockerfiles + bash scripts -> rootfs.tar, rootfs.ext4
-docs/   security documentation (added with the security controls)
+tools/  pipeline helpers (SARIF gate)
+docs/   security documentation, e.g. docs/security-findings.md
 out/    build output (gitignored)
 ```
 
@@ -28,10 +29,11 @@ Requirements: GNU Make, Docker, [uv](https://docs.astral.sh/uv/), Node.js
 with npm, git. Root on the host is not needed.
 
 ```
-make all        # api-test + os-lint + ui-build + rootfs
+make all        # api-test + os-lint + sast + ui-build + rootfs
 make api-test   # ruff, pyright (strict), pytest
 make ui-build   # npm ci, ESLint, vue-tsc, vite build
 make os-lint    # ShellCheck + hadolint (pinned images) on os/
+make sast       # Bandit + Semgrep -> out/sast/*.sarif, fails on high findings
 make rootfs     # out/rootfs.tar and out/rootfs.ext4
 ```
 
@@ -39,6 +41,11 @@ CI (`.github/workflows/ci.yml`) runs the same Makefile targets: `api`, `ui`
 and `os` jobs in parallel, then `image`, which builds the rootfs and uploads
 `rootfs.ext4` as a workflow artifact. Actions are pinned by commit SHA and the
 workflow token is read-only.
+
+`.github/workflows/sast.yml` runs `make sast` and uploads both SARIF reports
+to GitHub code scanning, also when the gate fails. Tools, rulesets and the
+severity policy (high blocks the merge) are in
+[docs/security-findings.md](docs/security-findings.md).
 
 ## How the OS image is built
 

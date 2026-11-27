@@ -1,0 +1,47 @@
+# Static analysis (SAST). `make sast` runs Bandit and Semgrep exactly as a
+# local build does and fails on blocking findings; the SARIF reports are
+# uploaded to GitHub code scanning even when that gate fails, so every finding
+# is tracked there. The weekly run picks up new Semgrep registry rules.
+name: sast
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 5 * * 1" # Mondays 05:23 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: "0.10.12" # same as UV_IMAGE in os/Dockerfile.rootfs
+      - run: make sast
+      # One category per tool, so each tool's alerts are opened and closed
+      # independently. Skipped only if a scanner never wrote its report.
+      - if: ${{ !cancelled() && hashFiles('out/sast/bandit.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          sarif_file: out/sast/bandit.sarif
+          category: bandit
+      - if: ${{ !cancelled() && hashFiles('out/sast/semgrep.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          sarif_file: out/sast/semgrep.sarif
+          category: semgrep

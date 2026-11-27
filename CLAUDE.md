@@ -42,10 +42,11 @@ code stays tiny; the pipeline and its evidence are the point. Plan: tasks
 
 Repo: https://github.com/udalshou/secure-firmware-pipeline-lab (public).
 
-Status (2026-11-27): tasks 01-02 done (API, UI, rootless rootfs build;
-GitHub Actions CI running the Makefile targets, green on `main`). The rootfs
+Status (2026-11-27): tasks 01-03 done (API, UI, rootless rootfs build;
+GitHub Actions CI running the Makefile targets, green on `main`; SAST with
+Bandit + Semgrep SARIF in code scanning, high findings block). The rootfs
 is deterministic per machine but not yet across machines (task 12). Next:
-task 03 (SAST).
+task 04 (SCA + SBOM).
 
 ## Conventions
 
@@ -61,6 +62,9 @@ task 03 (SAST).
   container (`os/Dockerfile.tools`), never with host root.
 - Images from ghcr.io fail to pull on the dev machine (token 403); prefer
   Docker Hub mirrors (e.g. `astral/uv`) or test CI-only.
+- Scanners write SARIF to `out/<kind>/`, upload it to code scanning even on
+  failure, and gate merges with `tools/sarif_gate.py` (SARIF `error` blocks).
+  Policy: `docs/security-findings.md`.
 - Never disable TLS checks for package managers; the Makefile unexports
   `NODE_TLS_REJECT_UNAUTHORIZED`.
 
@@ -71,8 +75,9 @@ secure-firmware-pipeline-lab/
 ├── api/        ← FastAPI app (uv, pyproject.toml + uv.lock)
 ├── ui/         ← Vue 3 + TypeScript (Vite, npm + package-lock.json)
 ├── os/         ← Dockerfiles + bash scripts: rootfs.tar, rootfs.ext4 (.mender: task 07)
+├── tools/      ← pipeline helpers (sarif_gate.py: fail on error-level SARIF)
 ├── .github/    ← CI, SAST, SBOM, release + signing workflows (task 02+)
-├── docs/       ← SSDF mapping, CRA checklist, hardening review, signing docs (later tasks)
+├── docs/       ← security-findings.md (scanners, severity policy); SSDF/CRA docs later
 ├── out/        ← gitignored build output
 └── tasks/      ← gitignored personal task tracker (README.md, todo/, done/)
 ```
