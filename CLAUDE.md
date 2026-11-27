@@ -38,7 +38,7 @@ A small, reproducible secure SDLC pipeline for an embedded Linux appliance:
 Python API + Vue UI + OS image build scripts + signed OTA update artifact,
 mapped to NIST SP 800-218 (SSDF) and the EU Cyber Resilience Act. The app
 code stays tiny; the pipeline and its evidence are the point. Plan: tasks
-01-11 in `tasks/todo/`.
+01-12 in `tasks/`.
 
 Repo: https://github.com/udalshou/secure-firmware-pipeline-lab (public).
 
