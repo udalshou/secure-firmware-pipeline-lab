@@ -25,8 +25,12 @@ PR text or CI logs:
   environment secrets; only public keys may be committed
 - personal data
 
-`.gitignore` covers `tasks/`, `out/` and `*.key` except `*public*.key`.
-Push protection and secret scanning stay on.
+`.gitignore` covers `tasks/`, `out/`, Python caches and `*.key` except
+`*public*.key`. Push protection and secret scanning stay on.
+
+Commits use the GitHub noreply address
+(`167848153+udalshou@users.noreply.github.com`, repo-local `git config`);
+the global git email has an employer domain and must not reach this repo.
 
 ## Project
 
@@ -36,15 +40,35 @@ mapped to NIST SP 800-218 (SSDF) and the EU Cyber Resilience Act. The app
 code stays tiny; the pipeline and its evidence are the point. Plan: tasks
 01-11 in `tasks/todo/`.
 
+Repo: https://github.com/udalshou/secure-firmware-pipeline-lab (public).
+
+Status (2026-11-27): task 01 done (API, UI, rootless rootfs build,
+`make all` green on a clean clone). Next: task 02 (CI baseline).
+
+## Conventions
+
+- OS base: Debian trixie (`debian:trixie-slim` by digest), apt pinned to a
+  dated snapshot.debian.org archive (`DEBIAN_SNAPSHOT` in `os/Dockerfile.*`).
+  Bump digest and snapshot together.
+- Security tools not on the host (ShellCheck, hadolint, Trivy, Semgrep,
+  cosign, mender-artifact) run as Docker images pinned by digest, the same
+  in CI and locally. No system installs.
+- Root-needing image steps (ownership, `mkfs.ext4`) run inside the tools
+  container (`os/Dockerfile.tools`), never with host root.
+- Images from ghcr.io fail to pull on the dev machine (token 403); prefer
+  Docker Hub mirrors (e.g. `astral/uv`) or test CI-only.
+- Never disable TLS checks for package managers; the Makefile unexports
+  `NODE_TLS_REJECT_UNAUTHORIZED`.
+
 ## Project structure
 
 ```
 secure-firmware-pipeline-lab/
 ├── api/        ← FastAPI app (uv, pyproject.toml + uv.lock)
 ├── ui/         ← Vue 3 + TypeScript (Vite, npm + package-lock.json)
-├── os/         ← bash build scripts: rootfs.tar, rootfs.ext4, .mender artifact
-├── .github/    ← CI, SAST, SBOM, release + signing workflows
-├── docs/       ← SSDF mapping, CRA checklist, hardening review, signing docs
+├── os/         ← Dockerfiles + bash scripts: rootfs.tar, rootfs.ext4 (.mender: task 07)
+├── .github/    ← CI, SAST, SBOM, release + signing workflows (task 02+)
+├── docs/       ← SSDF mapping, CRA checklist, hardening review, signing docs (later tasks)
 ├── out/        ← gitignored build output
 └── tasks/      ← gitignored personal task tracker (README.md, todo/, done/)
 ```

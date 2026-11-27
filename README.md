@@ -14,7 +14,7 @@ evidence they produce are the point.
 api/    FastAPI service (/health, /status), managed with uv (uv.lock)
 ui/     Vue 3 + TypeScript web UI (Vite), npm with package-lock.json
 os/     OS image build: Dockerfiles + bash scripts -> rootfs.tar, rootfs.ext4
-docs/   security documentation
+docs/   security documentation (added with the security controls)
 out/    build output (gitignored)
 ```
 
