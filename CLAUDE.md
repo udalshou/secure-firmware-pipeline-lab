@@ -42,17 +42,24 @@ code stays tiny; the pipeline and its evidence are the point. Plan: tasks
 
 Repo: https://github.com/udalshou/secure-firmware-pipeline-lab (public).
 
-Status (2026-11-27): tasks 01-03 done (API, UI, rootless rootfs build;
+Status (2026-11-27): tasks 01-04 done (API, UI, rootless rootfs build;
 GitHub Actions CI running the Makefile targets, green on `main`; SAST with
-Bandit + Semgrep SARIF in code scanning, high findings block). The rootfs
+Bandit + Semgrep SARIF in code scanning, high findings block; CycloneDX
+SBOM of the rootfs + UI, Trivy SCA on repo and SBOM, Dependabot). The rootfs
 is deterministic per machine but not yet across machines (task 12). Next:
-task 04 (SCA + SBOM).
+task 05 (repo protection).
 
 ## Conventions
 
 - OS base: Debian trixie (`debian:trixie-slim` by digest), apt pinned to a
   dated snapshot.debian.org archive (`DEBIAN_SNAPSHOT` in `os/Dockerfile.*`).
-  Bump digest and snapshot together.
+  Bump digest and snapshot together. The rootfs build runs `apt-get
+  upgrade`, so a snapshot bump is how Debian security fixes land. Image
+  references go in `FROM` lines directly, not via `ARG`, so Dependabot can
+  update them.
+- Supply chain: `make sbom` / `make sca` (Trivy + cyclonedx-cli images);
+  accepted Trivy findings in `.trivyignore.yaml`, each with a statement.
+  Containers that write into `out/` run as the host user (`--user`).
 - Security tools not on the host (ShellCheck, hadolint, Trivy, Semgrep,
   cosign, mender-artifact) run as Docker images pinned by digest, the same
   in CI and locally. No system installs.

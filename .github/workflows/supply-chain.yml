@@ -1,0 +1,54 @@
+# Supply chain. `make sca` builds the root filesystem, writes its CycloneDX
+# SBOM and runs Trivy on the repository and on that SBOM, exactly as a local
+# build does. SARIF goes to code scanning and the SBOM is kept as a workflow
+# artifact, also when the gate fails. The weekly run rechecks unchanged code
+# against new advisories (Trivy's database is fetched at scan time).
+name: supply-chain
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 5 * * 1" # Mondays 05:41 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sca:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.14.0"
+      - run: make sca
+      # One category per scan target, so each one's alerts open and close
+      # independently. Skipped only if a scan never wrote its report.
+      - if: ${{ !cancelled() && hashFiles('out/sca/trivy-repo.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          sarif_file: out/sca/trivy-repo.sarif
+          category: trivy-repo
+      - if: ${{ !cancelled() && hashFiles('out/sca/trivy-sbom.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
+        with:
+          sarif_file: out/sca/trivy-sbom.sarif
+          category: trivy-sbom
+      - if: ${{ !cancelled() && hashFiles('out/sbom/sbom.cdx.json') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: out/sbom/
+          retention-days: 30

@@ -5,7 +5,8 @@ Usage: python3 tools/sarif_gate.py REPORT.sarif [REPORT.sarif ...]
 Scanners keep every finding in their SARIF reports, which go to GitHub code
 scanning for triage. This gate applies the merge policy in
 docs/security-findings.md: SARIF level "error" (Bandit HIGH severity, Semgrep
-ERROR) blocks; "warning" and "note" are triaged in code scanning instead.
+ERROR, Trivy HIGH and CRITICAL) blocks; "warning" and "note" are triaged in
+code scanning instead.
 
 A result's level is resolved as SARIF 2.1.0 defines it: the result's own
 level, else its rule's defaultConfiguration.level, else "warning". Semgrep

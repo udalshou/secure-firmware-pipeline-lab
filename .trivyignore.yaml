@@ -1,0 +1,21 @@
+# Accepted Trivy findings. Every entry names the finding, where it applies and
+# why it is safe; review them when the cited reason changes. Policy:
+# docs/security-findings.md.
+
+misconfigurations:
+  - id: DS-0002
+    paths:
+      - os/Dockerfile.rootfs
+      - os/Dockerfile.tools
+    statement: >-
+      Build-only images, never run as services. Dockerfile.rootfs is exported
+      as the device root filesystem (lab-api runs there as a sandboxed
+      non-root systemd service); Dockerfile.tools must be root to keep file
+      ownership in the image while the build host stays rootless.
+  - id: DS-0026
+    paths:
+      - os/Dockerfile.rootfs
+      - os/Dockerfile.tools
+    statement: >-
+      HEALTHCHECK has no effect: neither image runs as a long-lived container.
+      On the device, systemd supervises lab-api.

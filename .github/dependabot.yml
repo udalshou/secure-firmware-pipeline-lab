@@ -1,0 +1,50 @@
+# Version updates for every pinned dependency Dependabot can parse: Python
+# (api/uv.lock), npm (ui/package-lock.json), GitHub Actions (commit SHAs) and
+# Docker base images (digests in os/Dockerfile.*). Minor and patch bumps come
+# as one grouped PR per ecosystem; major bumps come one by one. A new release
+# waits 7 days (cooldown) before a version-update PR, so a hijacked release
+# is more likely to be pulled before it lands here; security updates skip the
+# wait. Not covered: tool images pinned in the Makefile and DEBIAN_SNAPSHOT
+# (see docs/security-findings.md).
+version: 2
+
+updates:
+  - package-ecosystem: uv
+    directory: /api
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /os
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]

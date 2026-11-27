@@ -29,12 +29,14 @@ Requirements: GNU Make, Docker, [uv](https://docs.astral.sh/uv/), Node.js
 with npm, git. Root on the host is not needed.
 
 ```
-make all        # api-test + os-lint + sast + ui-build + rootfs
+make all        # api-test + os-lint + sast + ui-build + rootfs + sbom + sca
 make api-test   # ruff, pyright (strict), pytest
 make ui-build   # npm ci, ESLint, vue-tsc, vite build
 make os-lint    # ShellCheck + hadolint (pinned images) on os/
 make sast       # Bandit + Semgrep -> out/sast/*.sarif, fails on high findings
 make rootfs     # out/rootfs.tar and out/rootfs.ext4
+make sbom       # rootfs + CycloneDX SBOM of what ships -> out/sbom/sbom.cdx.json
+make sca        # sbom + Trivy on repo and SBOM -> out/sca/*.sarif, fails on fixable high
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same Makefile targets: `api`, `ui`
@@ -46,6 +48,11 @@ workflow token is read-only.
 to GitHub code scanning, also when the gate fails. Tools, rulesets and the
 severity policy (high blocks the merge) are in
 [docs/security-findings.md](docs/security-findings.md).
+
+`.github/workflows/supply-chain.yml` runs `make sca` on pull requests,
+pushes and weekly: it uploads the Trivy SARIF reports to code scanning and
+keeps the SBOM as a workflow artifact. Dependabot (`.github/dependabot.yml`)
+proposes weekly updates for Python, npm, GitHub Actions and base images.
 
 ## How the OS image is built
 
@@ -61,5 +68,7 @@ severity policy (high blocks the merge) are in
 Pinning: base images by digest, Debian packages through a dated
 [snapshot.debian.org](https://snapshot.debian.org) archive, Python packages
 through the hash-checked `api/uv.lock`, npm packages through
-`ui/package-lock.json`. Timestamps, filesystem UUID and hash seed are fixed
-(`SOURCE_DATE_EPOCH` defaults to the last commit time).
+`ui/package-lock.json`. The image build runs `apt-get upgrade`, so the
+snapshot date alone decides every Debian package version. Timestamps,
+filesystem UUID and hash seed are fixed (`SOURCE_DATE_EPOCH` defaults to the
+last commit time).

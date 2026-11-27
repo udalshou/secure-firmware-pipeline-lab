@@ -2,9 +2,8 @@
 # Runs as root inside a container, so file ownership in the image stays
 # correct without root on the build host. Same pins as Dockerfile.rootfs.
 
-ARG DEBIAN_IMAGE=debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0
-FROM ${DEBIAN_IMAGE}
-ARG DEBIAN_SNAPSHOT=20261120T000000Z
+FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0
+ARG DEBIAN_SNAPSHOT=20261127T000000Z
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN printf 'Types: deb\nURIs: http://snapshot.debian.org/archive/debian/%s\nSuites: trixie\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' \
         "${DEBIAN_SNAPSHOT}" > /etc/apt/sources.list.d/debian.sources \
