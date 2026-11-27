@@ -6,7 +6,7 @@ SHELL := /bin/bash
 # Never let a developer shell switch off TLS certificate checks for npm.
 unexport NODE_TLS_REJECT_UNAUTHORIZED
 
-.PHONY: all api-test ui-build os-lint sast rootfs sbom sca clean
+.PHONY: all api-test ui-build os-lint sast rootfs sbom sca release release-sign verify-release clean
 
 all: api-test os-lint sast rootfs sbom sca
 
@@ -42,6 +42,27 @@ CYCLONEDX := docker run --rm --network none $(AS_HOST_USER) \
 TRIVY_POLICY := --ignore-unfixed --ignorefile .trivyignore.yaml
 # Untracked or generated trees that `trivy fs` must not report on.
 TRIVY_SKIP_DIRS := .git,out,tasks,api/.venv,ui/node_modules,ui/dist
+
+# Release signing and verification. cosign is pinned by digest and runs as the
+# host user; $(call COSIGN,<dir>) mounts <dir> as its working directory.
+# Keyless signing reads the GitHub Actions OIDC token from the environment, so
+# only the release workflow can sign; anyone can verify.
+COSIGN_IMAGE := gcr.io/projectsigstore/cosign:v3.1.6@sha256:7d08ec40d6f6fd9ced81a498c367ee6d4dd90d73218f58a791f78661bdbef769
+COSIGN = docker run --rm $(AS_HOST_USER) --tmpfs /tmp --env HOME=/tmp \
+	--env ACTIONS_ID_TOKEN_REQUEST_URL --env ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+	--volume "$(CURDIR)/$(1):/work" --workdir /work $(COSIGN_IMAGE)
+GITHUB_REPO := udalshou/secure-firmware-pipeline-lab
+RELEASE_WORKFLOW := .github/workflows/release.yml
+RELEASE_DIR := out/release
+VERIFY_DIR := out/verify
+# Files published in a release, and the subset with a cosign signature:
+# SHA256SUMS covers every file, rootfs.ext4 can also be checked on its own.
+RELEASE_FILES := rootfs.ext4 sbom.cdx.json
+SIGNED_FILES := rootfs.ext4 SHA256SUMS
+# A signature is valid only if this repository's release workflow made it
+# while running for the tag being verified.
+SIGNER_IDENTITY = https://github.com/$(GITHUB_REPO)/$(RELEASE_WORKFLOW)@refs/tags/$(TAG)
+OIDC_ISSUER := https://token.actions.githubusercontent.com
 
 ## API: lint, format check, type check, tests (locked dependencies only)
 api-test:
@@ -101,6 +122,43 @@ sca: sbom
 		--format sarif . > $(SCA_DIR)/trivy-repo.sarif
 	$(TRIVY) sbom $(TRIVY_POLICY) --format sarif $(SBOM_DIR)/sbom.cdx.json > $(SCA_DIR)/trivy-sbom.sarif
 	python3 tools/sarif_gate.py $(SCA_DIR)/trivy-repo.sarif $(SCA_DIR)/trivy-sbom.sarif
+
+## Release files in out/release: rootfs.ext4, its SBOM and SHA256SUMS over
+## both; built only when the SCA gate passes
+release: sca
+	rm -rf $(RELEASE_DIR)
+	mkdir -p $(RELEASE_DIR)
+	cp out/rootfs.ext4 $(SBOM_DIR)/sbom.cdx.json $(RELEASE_DIR)/
+	cd $(RELEASE_DIR) && sha256sum $(RELEASE_FILES) > SHA256SUMS
+
+## Keyless cosign signatures (Sigstore bundles <file>.sigstore.json) for the
+## files in out/release. Release workflow only: needs its OIDC token, and does
+## not rebuild, so it signs exactly the files the build job produced
+release-sign:
+	test -n "$${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || \
+		{ echo "release-sign needs the GitHub Actions OIDC token (release.yml)" >&2; exit 1; }
+	for f in $(SIGNED_FILES); do \
+		$(call COSIGN,$(RELEASE_DIR)) sign-blob --yes --bundle "$$f.sigstore.json" "$$f"; \
+	done
+
+## Download release TAG and verify it as a consumer would: checksums, cosign
+## signatures from this repository's release workflow at TAG, and GitHub's
+## build provenance and SBOM attestations. Needs gh, logged in
+verify-release:
+	test -n "$(TAG)" || { echo "usage: make verify-release TAG=v0.1.0" >&2; exit 2; }
+	rm -rf $(VERIFY_DIR)
+	mkdir -p $(VERIFY_DIR)
+	gh release download "$(TAG)" --repo $(GITHUB_REPO) --dir $(VERIFY_DIR)
+	cd $(VERIFY_DIR) && sha256sum --check --strict SHA256SUMS
+	for f in $(SIGNED_FILES); do \
+		$(call COSIGN,$(VERIFY_DIR)) verify-blob --bundle "$$f.sigstore.json" \
+			--certificate-identity "$(SIGNER_IDENTITY)" \
+			--certificate-oidc-issuer $(OIDC_ISSUER) "$$f"; \
+	done
+	gh attestation verify $(VERIFY_DIR)/rootfs.ext4 --repo $(GITHUB_REPO) \
+		--cert-identity "$(SIGNER_IDENTITY)"
+	gh attestation verify $(VERIFY_DIR)/rootfs.ext4 --repo $(GITHUB_REPO) \
+		--cert-identity "$(SIGNER_IDENTITY)" --predicate-type https://cyclonedx.org/bom
 
 clean:
 	rm -rf out ui/dist

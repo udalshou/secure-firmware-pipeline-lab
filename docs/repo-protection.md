@@ -53,11 +53,14 @@ the repository (`.gitignore` blocks `*.key` except `*public*.key`).
 - Every third-party action is pinned by full commit SHA, tag in a trailing
   comment; Dependabot proposes updates.
 - Workflow token is `contents: read`; a job that uploads SARIF adds only
-  `security-events: write`. Checkouts use `persist-credentials: false`.
+  `security-events: write`. The release `publish` job, which builds nothing,
+  is the only one with `contents: write` and `id-token: write`
+  ([release-signing.md](release-signing.md)). Checkouts use
+  `persist-credentials: false`.
 - No workflow uses `pull_request_target`, so code from a fork never runs with
   a write token or secrets.
 - `step-security/harden-runner` runs in audit mode on the `supply-chain`
-  workflow, the job with the most network access. It records outbound
+  workflow, the job with the most network access, and on both release jobs. It records outbound
   connections without blocking them; switching to `egress-policy: block`
   needs an allow-list built from those records.
 
