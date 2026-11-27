@@ -28,13 +28,17 @@ Requirements: GNU Make, Docker, [uv](https://docs.astral.sh/uv/), Node.js
 with npm, git. Root on the host is not needed.
 
 ```
-make all        # api-test + ui-build + rootfs
+make all        # api-test + os-lint + ui-build + rootfs
 make api-test   # ruff, pyright (strict), pytest
 make ui-build   # npm ci, ESLint, vue-tsc, vite build
+make os-lint    # ShellCheck + hadolint (pinned images) on os/
 make rootfs     # out/rootfs.tar and out/rootfs.ext4
 ```
 
-CI runs the same Makefile targets.
+CI (`.github/workflows/ci.yml`) runs the same Makefile targets: `api`, `ui`
+and `os` jobs in parallel, then `image`, which builds the rootfs and uploads
+`rootfs.ext4` as a workflow artifact. Actions are pinned by commit SHA and the
+workflow token is read-only.
 
 ## How the OS image is built
 
