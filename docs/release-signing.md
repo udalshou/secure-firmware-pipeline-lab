@@ -12,16 +12,16 @@ The GitHub Release for that tag holds:
 
 | File | What it is |
 |------|------------|
-| `rootfs.ext4` | The root filesystem image |
+| `rootfs.ext4.xz` | The root filesystem image, xz-compressed (`rootfs.ext4` is a 256 MiB ext4 file system, about 33 MB compressed) |
 | `sbom.cdx.json` | CycloneDX SBOM of what ships in it (`make sbom`) |
 | `lab-firmware.mender` | Mender OTA update with `rootfs.ext4` as payload, signed with the device key ([mender-signing.md](mender-signing.md)) |
-| `SHA256SUMS` | SHA-256 of `rootfs.ext4`, `sbom.cdx.json` and `lab-firmware.mender` |
-| `rootfs.ext4.sigstore.json` | cosign signature bundle for `rootfs.ext4` |
+| `SHA256SUMS` | SHA-256 of `rootfs.ext4.xz`, `sbom.cdx.json` and `lab-firmware.mender` |
+| `rootfs.ext4.xz.sigstore.json` | cosign signature bundle for `rootfs.ext4.xz` |
 | `SHA256SUMS.sigstore.json` | cosign signature bundle for `SHA256SUMS`, so it covers every file |
 
 GitHub also stores two attestations for the release, signed the same way:
 SLSA build provenance for every file in `SHA256SUMS`, and the SBOM as a
-signed statement about `rootfs.ext4`.
+signed statement about `rootfs.ext4.xz`.
 
 ## How the workflow produces it
 
@@ -57,7 +57,7 @@ need to query Rekor.
 The certificate identity names the workflow and the tag it ran for:
 
 ```
-https://github.com/udalshou/secure-firmware-pipeline-lab/.github/workflows/release.yml@refs/tags/v0.1.0
+https://github.com/udalshou/secure-firmware-pipeline-lab/.github/workflows/release.yml@refs/tags/v0.2.1
 ```
 
 There is no private key to store, rotate or leak. A signature is only as
@@ -69,23 +69,34 @@ point to a commit on protected `main`.
 Requirements: Docker, curl and python3. No GitHub account or login.
 
 ```
-make verify-release TAG=v0.1.0
+make verify-release TAG=v0.2.1
 ```
+
+The file set changed between versions, so verify a release with the
+Makefile of its own tag (`git checkout <tag>`): v0.1.0 published the raw
+`rootfs.ext4`, v0.2.0 added the Mender artifact, v0.2.1 compressed the
+image.
 
 It downloads the release into `out/verify/` and fails unless every step
 passes:
 
 1. `sha256sum --check` against `SHA256SUMS`.
-2. `cosign verify-blob` for `rootfs.ext4` and `SHA256SUMS`, accepting only a
+2. `cosign verify-blob` for `rootfs.ext4.xz` and `SHA256SUMS`, accepting only a
    certificate issued to this repository's release workflow at that tag.
 3. `cosign verify-blob-attestation` for the SLSA build provenance and the
-   CycloneDX SBOM attestation of `rootfs.ext4`, with the same signer
+   CycloneDX SBOM attestation of `rootfs.ext4.xz`, with the same signer
    identity. [`tools/attestation_bundle.py`](../tools/attestation_bundle.py)
    fetches each bundle from GitHub's public attestations API; cosign checks
-   it against the image's digest (the image is over cosign's 128 MiB blob
-   limit, so the digest is passed instead of the file).
+   it against the image's digest.
 4. `mender-artifact validate` for `lab-firmware.mender` against the device
    public key in the checkout, as a device would check it.
+5. The decompressed image's SHA-256 equals the payload checksum inside the
+   Mender artifact, so the update carries exactly the attested image.
+
+`make release-sign` refuses to sign unless `out/release` holds exactly the
+release files. Release v0.2.0 shows why: a Makefile variable was expanded
+before it was defined, `SHA256SUMS` silently left out `lab-firmware.mender`,
+and neither cosign nor the provenance covered it. v0.2.1 fixed that.
 
 Every release file also carries GitHub's own release attestation (immutable
 releases, signed by GitHub's private Sigstore instance). `gh attestation
@@ -98,11 +109,11 @@ The signature and attestation checks by hand, with cosign and the GitHub CLI
 release attestation; not tested here):
 
 ```
-cosign verify-blob rootfs.ext4 --bundle rootfs.ext4.sigstore.json \
-  --certificate-identity https://github.com/udalshou/secure-firmware-pipeline-lab/.github/workflows/release.yml@refs/tags/v0.1.0 \
+cosign verify-blob rootfs.ext4.xz --bundle rootfs.ext4.xz.sigstore.json \
+  --certificate-identity https://github.com/udalshou/secure-firmware-pipeline-lab/.github/workflows/release.yml@refs/tags/v0.2.1 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-gh attestation verify rootfs.ext4 --repo udalshou/secure-firmware-pipeline-lab
-gh attestation verify rootfs.ext4 --repo udalshou/secure-firmware-pipeline-lab \
+gh attestation verify rootfs.ext4.xz --repo udalshou/secure-firmware-pipeline-lab
+gh attestation verify rootfs.ext4.xz --repo udalshou/secure-firmware-pipeline-lab \
   --predicate-type https://cyclonedx.org/bom
 ```
 

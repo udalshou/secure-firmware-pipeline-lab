@@ -16,12 +16,13 @@ integrity of software against unauthorised modification.
 |-------|-------|
 | Device type | `lab-device` (a device accepts only artifacts for its type) |
 | Artifact name | `lab-firmware-<version>`, version from `git describe` (the tag on a release) |
-| Payload | `rootfs.ext4`; its checksum in the artifact is the image's SHA-256 |
+| Payload | `rootfs.ext4`, lzma-compressed (about 33 MB); its checksum in the artifact is the uncompressed image's SHA-256 |
 | Tool | `mender-artifact` 3.9.0 from the pinned Debian snapshot, in `os/Dockerfile.tools` |
 
 Because the payload checksum equals the SHA-256 of `rootfs.ext4`, the
 artifact carries exactly the image that the release's cosign signature and
-build provenance describe.
+build provenance describe; `make verify-release` checks that against the
+decompressed `rootfs.ext4.xz`.
 
 ## Two signatures, two audiences
 
@@ -74,7 +75,7 @@ never the key: `mender-artifact sign` supports `--key-pkcs11` and
 [`.github/workflows/release.yml`](../.github/workflows/release.yml):
 
 1. `build` (read-only token) runs `make release`, which builds the unsigned
-   `lab-firmware.mender` next to `rootfs.ext4` and the SBOM.
+   `lab-firmware.mender` next to `rootfs.ext4.xz` and the SBOM.
 2. `mender-sign` runs in the `release` environment, the only place
    `MENDER_SIGNING_KEY` is available. It builds the tools image first, then
    writes the key to a mode 600 file in `$RUNNER_TEMP` and runs `make

@@ -51,8 +51,9 @@ CODEOWNERS, OpenSSF Scorecard; tag `v*` -> keyless cosign signatures, build
 provenance + SBOM attestations, immutable GitHub Release, `make
 verify-release`). Task 07 in progress: Mender artifact `lab-firmware.mender`,
 signed with an ECDSA P-256 device key in a `mender-sign` job, negative tests
-in `make mender-selftest`; still needs the `release` environment and a
-tagged release. The rootfs is deterministic per machine but not yet across
+in `make mender-selftest`; `release` environment set up, v0.2.0 released (its
+SHA256SUMS missed the .mender; fixed in v0.2.1, which also ships the image as
+`rootfs.ext4.xz`). The rootfs is deterministic per machine but not yet across
 machines (task 12).
 
 ## Conventions
