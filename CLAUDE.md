@@ -89,7 +89,8 @@ secure-firmware-pipeline-lab/
 ├── api/        ← FastAPI app (uv, pyproject.toml + uv.lock)
 ├── ui/         ← Vue 3 + TypeScript (Vite, npm + package-lock.json)
 ├── os/         ← Dockerfiles + bash scripts: rootfs.tar, rootfs.ext4 (.mender: task 07)
-├── tools/      ← pipeline helpers (sarif_gate.py: fail on error-level SARIF)
+├── tools/      ← pipeline helpers (sarif_gate.py: fail on error-level SARIF;
+│                 attestation_bundle.py: fetch attestation for verify-release)
 ├── .github/    ← CI, SAST, SBOM, release + signing workflows (task 02+)
 ├── docs/       ← security-findings.md (scanners, severity policy), repo-protection.md, release-signing.md; SSDF/CRA docs later
 ├── out/        ← gitignored build output

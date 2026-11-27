@@ -16,7 +16,7 @@ evidence they produce are the point.
 api/    FastAPI service (/health, /status), managed with uv (uv.lock)
 ui/     Vue 3 + TypeScript web UI (Vite), npm with package-lock.json
 os/     OS image build: Dockerfiles + bash scripts -> rootfs.tar, rootfs.ext4
-tools/  pipeline helpers (SARIF gate)
+tools/  pipeline helpers (SARIF gate, attestation fetch for release checks)
 docs/   security documentation: security-findings.md, repo-protection.md,
         release-signing.md
 out/    build output (gitignored)
@@ -75,14 +75,14 @@ Pushing a tag `v*` runs `.github/workflows/release.yml`: it builds
 `rootfs.ext4` and its SBOM, signs them with Sigstore keyless signing
 (cosign, GitHub OIDC), adds GitHub build provenance and SBOM attestations
 and publishes an immutable GitHub Release. Only a commit on `main` can be
-released. Verify any release with Docker and a logged-in `gh`:
+released. Verify any release with Docker, curl and python3, no login:
 
 ```
 make verify-release TAG=v0.1.0
 ```
 
-What it checks, the equivalent manual `cosign` and `gh attestation`
-commands, and keyless versus keyed signing:
+What it checks, the equivalent manual commands, and keyless versus keyed
+signing:
 [docs/release-signing.md](docs/release-signing.md).
 
 ## How the OS image is built
