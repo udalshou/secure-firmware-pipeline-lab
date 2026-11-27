@@ -1,0 +1,47 @@
+[project]
+name = "lab-api"
+version = "0.1.0"
+description = "Minimal appliance API for the secure firmware pipeline lab"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.165.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+lab-api = "lab_api:main"
+
+[build-system]
+requires = ["uv_build>=0.10.12,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.29.0",
+    "pyright>=1.1.414",
+    "pytest>=9.2.0",
+    "ruff>=0.17.6",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "N"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.pyright]
+include = ["src", "tests"]
+typeCheckingMode = "standard"
+# Strict for our code; tests use starlette's TestClient, which is not fully typed.
+strict = ["src"]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# starlette asks for the httpx successor; httpx is still the supported fastapi test dep.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]
