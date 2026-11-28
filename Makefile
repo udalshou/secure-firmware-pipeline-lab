@@ -6,7 +6,7 @@ SHELL := /bin/bash
 # Never let a developer shell switch off TLS certificate checks for npm.
 unexport NODE_TLS_REJECT_UNAUTHORIZED
 
-.PHONY: all api-test ui-build os-lint sast tools-image rootfs mender mender-selftest sbom sca \
+.PHONY: all api-test ui-build os-lint sast tools-image rootfs hardening-audit mender mender-selftest sbom sca \
 	release mender-sign release-sign verify-release clean
 
 all: api-test os-lint sast rootfs mender-selftest sbom sca
@@ -132,6 +132,14 @@ tools-image:
 ## OS image: out/rootfs.tar and out/rootfs.ext4
 rootfs: ui-build tools-image
 	TOOLS_IMAGE=$(TOOLS_IMAGE) os/build-rootfs.sh
+
+## OS hardening audit -> out/hardening: Lynis inside the rootfs, offline
+## systemd-analyze security of our units, boot check under systemd in an
+## unprivileged container. Fails if the image does not boot with lab-api
+## answering or a unit scores above 2.0 (os/hardening-audit.sh,
+## docs/hardening-review.md)
+hardening-audit: rootfs
+	TOOLS_IMAGE=$(TOOLS_IMAGE) os/hardening-audit.sh out/rootfs.tar out/hardening
 
 ## Mender artifact out/lab-firmware.mender from rootfs.ext4, unsigned: only
 ## the release workflow signs it (mender-sign)

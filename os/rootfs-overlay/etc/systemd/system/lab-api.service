@@ -6,12 +6,42 @@ Wants=network-online.target
 [Service]
 ExecStart=/opt/lab-api/bin/lab-api
 Environment=LAB_API_HOST=0.0.0.0 LAB_API_PORT=8080 LAB_UI_DIR=/usr/share/lab-ui
+Restart=on-failure
+
+# Sandbox: the API only reads its code and the UI files and serves TCP on an
+# unprivileged port. Everything else is taken away; os/hardening-audit.sh
+# fails the build if `systemd-analyze security` scores this unit above 2.0.
+# No PrivateUsers=: the audit's container boot cannot create user namespaces,
+# so a unit using it could not be tested there.
 DynamicUser=yes
+UMask=0077
 NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-Restart=on-failure
+PrivateDevices=yes
+DevicePolicy=closed
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
 
 [Install]
 WantedBy=multi-user.target

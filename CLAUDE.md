@@ -52,8 +52,10 @@ provenance + SBOM attestations, immutable GitHub Release, `make
 verify-release`; Mender artifact signed with an ECDSA P-256 device key in a
 `mender-sign` job behind the `release` environment, negative tests in `make
 mender-selftest`; latest release v0.2.1, image shipped as `rootfs.ext4.xz`).
+Task 08 on branch `os-hardening`: `make hardening-audit` (Lynis 58 -> 62,
+lab-api exposure 8.1 -> 1.2, boot check), `docs/hardening-review.md`.
 The rootfs is deterministic per machine but not yet across machines
-(task 12). Next: task 08 (OS hardening review).
+(task 12). Next: task 09.
 
 ## Conventions
 
@@ -88,6 +90,10 @@ The rootfs is deterministic per machine but not yet across machines
   `MENDER_SIGNING_KEY` secret of the `release` environment, used only by the
   `mender-sign` job. mender-artifact 3.9 needs traditional PEM keys, has no
   Ed25519 and fails open with one. Details: `docs/mender-signing.md`.
+- Never run the rootfs (or any systemd image) with `docker run
+  --privileged`: its systemd takes over host input devices and TTYs and
+  ends the desktop session. Boot checks use `os/hardening-audit.sh`
+  (CAP_SYS_ADMIN + container-local cgroup remount), no host devices.
 - Never disable TLS checks for package managers; the Makefile unexports
   `NODE_TLS_REJECT_UNAUTHORIZED`.
 
@@ -98,12 +104,13 @@ secure-firmware-pipeline-lab/
 ├── api/        ← FastAPI app (uv, pyproject.toml + uv.lock)
 ├── ui/         ← Vue 3 + TypeScript (Vite, npm + package-lock.json)
 ├── os/         ← Dockerfiles + bash scripts: rootfs.tar, rootfs.ext4, lab-firmware.mender
-│                 (mender-selftest.sh: signature negative tests)
+│                 (mender-selftest.sh: signature negative tests;
+│                 hardening-audit.sh: Lynis, unit scores, boot check)
 ├── tools/      ← pipeline helpers (sarif_gate.py: fail on error-level SARIF;
 │                 attestation_bundle.py: fetch attestation for verify-release)
 ├── .github/    ← CI, SAST, SBOM, release + signing workflows (task 02+)
 ├── docs/       ← security-findings.md (scanners, severity policy), repo-protection.md, release-signing.md,
-│                 mender-signing.md; SSDF/CRA docs later
+│                 mender-signing.md, hardening-review.md; SSDF/CRA docs later
 ├── out/        ← gitignored build output
 └── tasks/      ← gitignored personal task tracker (README.md, todo/, done/)
 ```

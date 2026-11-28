@@ -49,11 +49,25 @@ FROM base AS rootfs
 # Package versions are fixed by DEBIAN_SNAPSHOT, not per package.
 # hadolint ignore=DL3008
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends systemd systemd-sysv python3 \
+    && apt-get install -y --no-install-recommends systemd systemd-sysv systemd-timesyncd python3 \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/*.bin /var/log/apt /var/log/dpkg.log
 COPY --from=api-build /opt/lab-api /opt/lab-api
 COPY ui/dist /usr/share/lab-ui
 COPY os/rootfs-overlay/ /
-RUN systemctl enable lab-api.service \
+# Hardening (docs/hardening-review.md):
+# - only lab-api and time sync run; apt timers and cron scripts are pointless
+#   on an image updated as a whole by Mender (there is no cron daemon either),
+#   and no network file systems are mounted
+# - no console logins: every account is locked, so gettys only add surface
+# - no setuid/setgid programs: nobody logs in, so nothing needs to elevate
+# - new files are not world-readable by default (trixie's login.defs has
+#   no UMASK line)
+RUN systemctl enable lab-api.service systemd-timesyncd.service \
+    && systemctl disable apt-daily.timer apt-daily-upgrade.timer dpkg-db-backup.timer \
+        remote-fs.target getty@tty1.service \
+    && systemctl mask getty@.service autovt@.service serial-getty@.service \
+    && rm -rf /etc/cron.daily \
+    && find / -xdev -type f -perm /6000 -exec chmod ug-s {} + \
+    && printf 'UMASK\t\t027\n' >> /etc/login.defs \
     && echo lab-appliance > /etc/hostname \
     && : > /etc/machine-id
