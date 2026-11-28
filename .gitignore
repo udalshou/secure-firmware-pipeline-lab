@@ -5,3 +5,7 @@ out/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+
+# Personal assistant notes, not part of the project
+CLAUDE.md
+.claude/
