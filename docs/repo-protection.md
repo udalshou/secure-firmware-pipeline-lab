@@ -32,7 +32,7 @@ deadlock a one-person repository. The ruleset requires zero approvals and
 does not require a code owner review. [`CODEOWNERS`](../.github/CODEOWNERS)
 still marks the build system and CI (`os/`, `.github/`, `tools/`, `Makefile`)
 as owned by the security reviewer. The second, independent review comes from
-the automated checks above and from an AI reviewer on every PR (task 09).
+the automated checks above (tests, SAST, SCA, code scanning gate).
 With a second maintainer, raise `required_approving_review_count` to 1 and
 set `require_code_owner_review`.
 
