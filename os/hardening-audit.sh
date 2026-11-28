@@ -27,9 +27,12 @@ readonly BOOT_TIMEOUT=60
 
 rootfs=${1:?usage: hardening-audit.sh <rootfs.tar> <out-dir>}
 out=${2:?usage: hardening-audit.sh <rootfs.tar> <out-dir>}
-: "${TOOLS_IMAGE:?TOOLS_IMAGE must name the tools image; run 'make hardening-audit'}"
+if [[ -z "${TOOLS_IMAGE:-}" ]]; then
+    echo "TOOLS_IMAGE must name the tools image; run 'make hardening-audit'" >&2
+    exit 2
+fi
 mkdir -p "$out"
-out=$(cd "$out" && pwd)
+out="$(cd "$out" && pwd)"
 
 docker import "$rootfs" "$AUDIT_TAG" >/dev/null
 
@@ -42,14 +45,16 @@ run_lynis() {
         bash -c 'tar -C / -xf - \
             && lynis audit system --quick --no-colors --logfile /out/lynis.log \
                 --report-file /out/lynis-report.dat > /out/lynis.txt 2>&1; \
-            rc=$?; chown -R "$1" /out; exit $rc' _ "$(id -u):$(id -g)"
+            rc=$?; chown -R "$1" /out; exit "$rc"' _ "$(id -u):$(id -g)"
 }
 
 # Scores every service unit the image adds under /etc/systemd/system
 # (regular files only: masked units are symlinks to /dev/null).
 score_units() {
     docker run --rm --network none "$AUDIT_TAG" bash -c '
-        for unit in $(find /etc/systemd/system -maxdepth 1 -type f -name "*.service"); do
+        shopt -s nullglob
+        for unit in /etc/systemd/system/*.service; do
+            [[ -f "$unit" && ! -L "$unit" ]] || continue
             echo "== ${unit##*/}"
             systemd-analyze security --offline=true --no-pager "$unit"
         done' > "$out/units-security.txt"
@@ -57,19 +62,19 @@ score_units() {
 
 check_boot() {
     local container status
-    container=$(docker run --detach --tty --env container=docker --network none \
+    container="$(docker run --detach --tty --env container=docker --network none \
         --cgroupns=private --cap-add SYS_ADMIN \
         --security-opt apparmor=unconfined --security-opt seccomp=unconfined \
         --tmpfs /run --tmpfs /run/lock --tmpfs /tmp \
         --entrypoint /bin/bash "$AUDIT_TAG" \
-        -c 'mount -o remount,rw /sys/fs/cgroup && exec /lib/systemd/systemd')
-    # shellcheck disable=SC2064  # expand $container now
-    trap "docker kill $container >/dev/null 2>&1; docker rm $container >/dev/null" RETURN
+        -c 'mount -o remount,rw /sys/fs/cgroup && exec /lib/systemd/systemd')"
+    # Runs when check_boot returns, while the local $container still exists.
+    trap 'docker kill "$container" >/dev/null 2>&1; docker rm "$container" >/dev/null' RETURN
     # systemctl --wait needs the manager's bus, which appears a moment after
     # PID 1 starts.
-    status=$(docker exec "$container" timeout "$BOOT_TIMEOUT" bash -c '
+    status="$(docker exec "$container" timeout "$BOOT_TIMEOUT" bash -c '
         until [[ -S /run/systemd/private ]]; do sleep 0.5; done
-        systemctl is-system-running --wait' 2>&1 || true)
+        systemctl is-system-running --wait' 2>&1 || true)"
     {
         echo "system: $status"
         # Probe first: a crash-looping unit can look "active" between restarts,
@@ -103,11 +108,11 @@ run_lynis
 score_units
 check_boot
 
-index=$(sed -n 's/^hardening_index=//p' "$out/lynis-report.dat")
+index="$(sed -n 's/^hardening_index=//p' "$out/lynis-report.dat")"
 # "→ Overall exposure level for x.service: 8.1 EXPOSED :-(" -> "x.service 8.1"
-exposures=$(awk '/^== /{unit=$2}
+exposures="$(awk '/^== /{unit=$2}
     /Overall exposure level/ { match($0, /: [0-9.]+ /); print unit, substr($0, RSTART + 2, RLENGTH - 3) }' \
-    "$out/units-security.txt")
+    "$out/units-security.txt")"
 {
     echo "lynis hardening index: $index"
     echo "unit exposure (offline, max $MAX_EXPOSURE):"
