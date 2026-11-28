@@ -6,7 +6,7 @@
 # archive, Python packages via api/uv.lock (hash-checked). Images are named in
 # FROM lines directly (not through ARGs) so Dependabot can bump the digests.
 
-FROM astral/uv:0.10.12@sha256:72ab0aeb448090480ccabb99fb5f52b0dc3c71923bffb5e2e26517a1c27b7fec AS uv
+FROM astral/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d AS uv
 
 # --- Shared base: Debian pinned to one archive snapshot ---------------------
 FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS base
