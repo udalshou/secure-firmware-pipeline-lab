@@ -19,7 +19,7 @@ os/     OS image build: Dockerfiles + bash scripts -> rootfs.tar, rootfs.ext4,
         lab-firmware.mender (Mender OTA artifact)
 tools/  pipeline helpers (SARIF gate, attestation fetch for release checks)
 docs/   security documentation: security-findings.md, repo-protection.md,
-        release-signing.md, mender-signing.md
+        release-signing.md, mender-signing.md, hardening-review.md
 out/    build output (gitignored)
 ```
 
@@ -39,6 +39,7 @@ make ui-build   # npm ci, ESLint, vue-tsc, vite build
 make os-lint    # ShellCheck + hadolint (pinned images) on os/
 make sast       # Bandit + Semgrep -> out/sast/*.sarif, fails on high findings
 make rootfs     # out/rootfs.tar and out/rootfs.ext4
+make hardening-audit  # rootfs + Lynis, unit sandbox scores, boot check -> out/hardening/
 make mender     # rootfs + unsigned Mender artifact out/lab-firmware.mender
 make mender-selftest  # mender + signature checks with throwaway keys (must reject bad artifacts)
 make sbom       # rootfs + CycloneDX SBOM of what ships -> out/sbom/sbom.cdx.json
@@ -107,6 +108,11 @@ artifact, its keys, the device configuration and key rotation:
    `mender-artifact` from the same tools container. The image ships the
    public key that devices verify updates against
    (`os/rootfs-overlay/etc/mender/`).
+5. `make hardening-audit` checks the result: Lynis inside the rootfs,
+   `systemd-analyze security` of the API unit (fails above 2.0) and a boot
+   check under systemd. The image runs only the API and time sync, has no
+   login path and no setuid programs:
+   [docs/hardening-review.md](docs/hardening-review.md).
 
 Pinning: base images by digest, Debian packages through a dated
 [snapshot.debian.org](https://snapshot.debian.org) archive, Python packages

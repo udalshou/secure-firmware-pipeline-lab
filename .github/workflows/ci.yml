@@ -63,6 +63,17 @@ jobs:
       # Builds rootfs.ext4 and the unsigned Mender artifact, then proves that
       # artifact verification rejects wrong keys, unsigned and modified files.
       - run: make mender-selftest
+      # Non-blocking for now: Lynis report, unit sandbox scores and the boot
+      # check are uploaded as evidence (docs/hardening-review.md).
+      - run: make hardening-audit
+        continue-on-error: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: hardening-audit
+          path: out/hardening/
+          if-no-files-found: warn
+          retention-days: 30
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rootfs
