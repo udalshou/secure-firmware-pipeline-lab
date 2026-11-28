@@ -18,8 +18,8 @@ ui/     Vue 3 + TypeScript web UI (Vite), npm with package-lock.json
 os/     OS image build: Dockerfiles + bash scripts -> rootfs.tar, rootfs.ext4,
         lab-firmware.mender (Mender OTA artifact)
 tools/  pipeline helpers (SARIF gate, attestation fetch for release checks)
-docs/   security documentation: security-findings.md, repo-protection.md,
-        release-signing.md, mender-signing.md, hardening-review.md
+docs/   security documentation: SSDF mapping, CRA checklist, threat model,
+        development policy, scanners, repo protection, signing, hardening
 out/    build output (gitignored)
 ```
 
@@ -33,10 +33,11 @@ Requirements: GNU Make, Docker, [uv](https://docs.astral.sh/uv/), Node.js
 with npm, git. Root on the host is not needed.
 
 ```
-make all        # api-test + os-lint + sast + ui-build + rootfs + mender-selftest + sbom + sca
+make all        # api-test + os-lint + docs-check + sast + ui-build + rootfs + mender-selftest + sbom + sca
 make api-test   # ruff, pyright (strict), pytest
 make ui-build   # npm ci, ESLint, vue-tsc, vite build
 make os-lint    # ShellCheck + hadolint (pinned images) on os/
+make docs-check # every relative link and anchor in tracked Markdown resolves (lychee, offline)
 make sast       # Bandit + Semgrep -> out/sast/*.sarif, fails on high findings
 make rootfs     # out/rootfs.tar and out/rootfs.ext4
 make hardening-audit  # rootfs + Lynis, unit sandbox scores, boot check -> out/hardening/
@@ -64,6 +65,23 @@ severity policy (high blocks the merge) are in
 pushes and weekly: it uploads the Trivy SARIF reports to code scanning and
 keeps the SBOM as a workflow artifact. Dependabot (`.github/dependabot.yml`)
 proposes weekly updates for Python, npm, GitHub Actions and base images.
+
+## Security controls
+
+| Document | What it covers |
+|----------|----------------|
+| [docs/ssdf-mapping.md](docs/ssdf-mapping.md) | Every NIST SP 800-218 practice -> control -> evidence -> gap |
+| [docs/cra-checklist.md](docs/cra-checklist.md) | EU Cyber Resilience Act Annex I, reporting duties, open gaps |
+| [docs/threat-model.md](docs/threat-model.md) | Trust boundaries and STRIDE threats with their controls |
+| [docs/secure-development-policy.md](docs/secure-development-policy.md) | Roles, review, dependencies, release, key custody, incidents |
+| [SECURITY.md](SECURITY.md) | Supported versions, private reporting, response targets, disclosure |
+| [docs/security-findings.md](docs/security-findings.md) | SAST and SCA tools, SBOM, severity policy |
+| [docs/repo-protection.md](docs/repo-protection.md) | Ruleset, signed commits, CI hardening, Scorecard |
+| [docs/release-signing.md](docs/release-signing.md), [docs/mender-signing.md](docs/mender-signing.md) | Release and OTA update signing and verification |
+| [docs/hardening-review.md](docs/hardening-review.md) | OS image hardening audit and checklist |
+
+Gaps are listed, not hidden: no second human reviewer, no API
+authentication or TLS, no verified boot or rollback protection, no DAST.
 
 ## Repository protection
 

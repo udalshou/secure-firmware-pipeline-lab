@@ -6,10 +6,10 @@ SHELL := /bin/bash
 # Never let a developer shell switch off TLS certificate checks for npm.
 unexport NODE_TLS_REJECT_UNAUTHORIZED
 
-.PHONY: all api-test ui-build os-lint sast tools-image rootfs hardening-audit mender mender-selftest sbom sca \
+.PHONY: all api-test ui-build os-lint docs-check sast tools-image rootfs hardening-audit mender mender-selftest sbom sca \
 	release mender-sign release-sign verify-release clean
 
-all: api-test os-lint sast rootfs mender-selftest sbom sca
+all: api-test os-lint docs-check sast rootfs mender-selftest sbom sca
 
 # Version of everything built from this checkout: the tag on a release build,
 # otherwise the short commit hash (with -dirty for uncommitted changes).
@@ -19,6 +19,8 @@ VERSION = $(shell git describe --tags --always --dirty)
 # locally; nothing is installed on the host. Bump tag and digest together.
 SHELLCHECK_IMAGE := koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
 HADOLINT_IMAGE := hadolint/hadolint:v2.14.0@sha256:27086352fd5e1907ea2b934eb1023f217c5ae087992eb59fde121dce9c9ff21e
+# Link checker for the documentation, pinned by digest like the linters.
+LYCHEE_IMAGE := lycheeverse/lychee:0.24.2@sha256:e2d19e57cf6ab037026f20b8e449a1f30d9d7f81eef4194763aab2eab20bd28d
 LINT_RUN := docker run --rm --network none --volume "$(CURDIR):/src:ro" --workdir /src
 
 # SAST. The Semgrep engine is pinned by digest; its registry rulesets are
@@ -113,6 +115,14 @@ ui-build:
 os-lint:
 	$(LINT_RUN) $(SHELLCHECK_IMAGE) --external-sources os/*.sh
 	$(LINT_RUN) $(HADOLINT_IMAGE) hadolint os/Dockerfile.*
+
+## Docs: every relative link and #anchor in tracked Markdown resolves. Offline:
+## the docs are evidence for docs/ssdf-mapping.md and docs/cra-checklist.md,
+## so a renamed file or heading must not leave a dead reference; web links
+## are not fetched, so the check never fails on someone else's outage
+docs-check:
+	$(LINT_RUN) --user "$$(id -u):$$(id -g)" $(LYCHEE_IMAGE) --offline --no-progress \
+		--include-fragments $$(git ls-files '*.md')
 
 ## SAST: Bandit and Semgrep write SARIF to out/sast (all findings, for code
 ## scanning); then the gate fails on error-level (high) findings only
